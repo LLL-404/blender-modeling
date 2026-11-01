@@ -1,0 +1,294 @@
+REGIONS = {
+    "crotch_task(|x|<30,z.70-.80,|y|<.05)":
+        lambda q: abs(q.x) < 0.030 and 0.70 <= q.z <= 0.80 and -0.05 <= q.y <= 0.05,
+    "cutline(20<|x|<55,z.70-.80,|y|<.12)":
+        lambda q: 0.020 < abs(q.x) < 0.055 and 0.70 <= q.z <= 0.80 and abs(q.y) <= 0.12,
+}
+EXT_POSES = {
+    "cross_35_15": [("thigh.L", 'Y', -35), ("thigh.R", 'Y', -15)],
+    "cross_60_30": [("thigh.L", 'Y', -60), ("thigh.R", 'Y', -30)],
+}
+
+
+def reset_pose():
+    for pb in arm.pose.bones:
+        pb.rotation_mode = 'QUATERNION'
+        pb.rotation_quaternion = (1, 0, 0, 0)
+        pb.location = (0, 0, 0)
+
+
+def apply_extreme(key="cross_35_15"):
+    """临时极端姿势（只在本脚本内存里，绝不写回 rig.POSES / m5_rig.py）。
+    两条腿都往 +x 摆，形成交叉；sign 约定：R_y(θ)(0,0,-1)=(-sinθ,0,-cosθ)。"""
+    reset_pose()
+    for bn, ax, deg in EXT_POSES[key]:
+        rig.rot_bone(arm, bn, ax, deg)
+    bpy.context.view_layer.update()
+
+
+def apply_finger_bend():
+    """临时屈指：wave 只转 palm、指骨无局部旋转，整只手是刚体，
+    边长比恒为 1.0 —— 该指标在 wave 下没有区分度，必须另造姿势才测得出软过渡。"""
+    reset_pose()
+    rig.rot_bone(arm, "index_proximal.L", 'X', -45)
+    rig.rot_bone(arm, "index_middle.L", 'X', -30)
+    bpy.context.view_layer.update()
+
+
+def extreme_stats(ob, pose_key):
+    reset_pose()
+    bpy.context.view_layer.update()
+    r0, _ = eval_mesh(ob)
+    rn = [pg.normal.copy() for pg in ob.data.polygons]
+    apply_extreme(pose_key)
+    e0, en = eval_mesh(ob)
+    out = {}
+    for rk, pred in REGIONS.items():
+        ratios, angles = [], []
+        for e in ob.data.edges:
+            i, j = e.vertices
+            if not (pred(r0[i]) and pred(r0[j])):
+                continue
+            l0 = (r0[i] - r0[j]).length
+            l1 = (e0[i] - e0[j]).length
+            if l0 > 1e-4:                       # 忽略 0.1mm 级短边，避免比值爆炸
+                ratios.append(l1 / l0)
+            d0, d1 = e0[i] - r0[i], e0[j] - r0[j]
+            if d0.length > 1e-6 and d1.length > 1e-6:
+                c = max(-1.0, min(1.0, d0.normalized().dot(d1.normalized())))
+                angles.append(math.degrees(math.acos(c)))
+        nf = tot = 0
+        for pi, pg in enumerate(ob.data.polygons):
+            if all(pred(r0[v]) for v in pg.vertices):
+                tot += 1
+                if rn[pi].dot(en[pi]) < 0:
+                    nf += 1
+        ratios.sort()
+        out[rk] = {"n_edges": len(ratios),
+                   "max_ratio": round(max(ratios), 3) if ratios else None,
+                   "p95_ratio": round(ratios[int(0.95 * (len(ratios) - 1))], 3) if ratios else None,
+                   "min_ratio": round(min(ratios), 3) if ratios else None,
+                   "n_ratio_gt5": sum(1 for r in ratios if r > 5.0),
+                   "n_ratio_lt0.2": sum(1 for r in ratios if r < 0.2),
+                   "n_edges_disp_gt90deg": sum(1 for a in angles if a > 90.0),
+                   "n_faces": tot, "normal_flip_faces": nf}
+    return out
+
+
+p("B2_extreme_poses", {k: [f"{a} {b} {c}deg" for a, b, c in v] for k, v in EXT_POSES.items()})
+p("B2_extreme_regions", list(REGIONS))
+p("B2_extreme_side_lock_on", {k: extreme_stats(b, k) for k in EXT_POSES})
+
+# 关掉 side_lock 重绑 Body 再测（只在内存里）
+for g in list(b.vertex_groups):
+    b.vertex_groups.remove(g)
+for m in list(b.modifiers):
+    if m.type == 'ARMATURE':
+        b.modifiers.remove(m)
+b.parent = None
+body_bones = [n for n, *_ in rig.BONES if not rig.is_finger(n)]
+rig.weight_nearest_banded(b, arm, body_bones, power=4.0, keep=3,
+                          allow=rig.body_allow, side_lock=False)
+p("B2_extreme_side_lock_off", {k: extreme_stats(b, k) for k in EXT_POSES})
+
+# 恢复 side_lock=True（与 m5_rig 一致）
+for g in list(b.vertex_groups):
+    b.vertex_groups.remove(g)
+for m in list(b.modifiers):
+    if m.type == 'ARMATURE':
+        b.modifiers.remove(m)
+b.parent = None
+rig.weight_nearest_banded(b, arm, body_bones, power=4.0, keep=3,
+                          allow=rig.body_allow, side_lock=True)
+bw = wmap(b)
+restc[b.name] = rest_pts(b)
+
+# ---------------------------------------------------------------- 9. B3 指尖 vs distal tail
+
+reset_pose()
+rig.apply_pose(arm, "wave")
+bpy.context.view_layer.update()
+hc, _ = eval_mesh(hs)
+tips = {}
+worst_min = 0.0
+for suf in (".L", ".R"):
+    for fname in ("index", "middle", "ring", "pinky"):
+        bn = f"{fname}_distal{suf}"
+        if bn not in arm.pose.bones or bn not in hs.vertex_groups:
+            tips[bn] = "MISSING"
+            continue
+        gi = hs.vertex_groups[bn].index
+        idxs = [v.index for v in hs.data.vertices
+                if any(g.group == gi and g.weight > 0.5 for g in v.groups)]
+        tail = arm.matrix_world @ arm.pose.bones[bn].tail
+        head = arm.matrix_world @ arm.pose.bones[bn].head
+        ds = sorted((hc[i] - tail).length for i in idxs)
+        if not ds:
+            tips[bn] = "EMPTY GROUP"
+            continue
+        tips[bn] = {"n": len(idxs), "min_mm": mm(ds[0]), "max_mm": mm(ds[-1]),
+                    "bone_len_mm": mm((tail - head).length)}
+        worst_min = max(worst_min, ds[0])
+p("B3_fingertip_dist_to_tail_wave", tips)
+p("B3_worst_min_dist_mm", mm(worst_min))
+
+rig.apply_pose(arm, "rest")
+bpy.context.view_layer.update()
+hc0, _ = eval_mesh(hs)
+tips_rest = {}
+for suf in (".L", ".R"):
+    for fname in ("index", "middle", "ring", "pinky"):
+        bn = f"{fname}_distal{suf}"
+        if bn not in hs.vertex_groups:
+            continue
+        gi = hs.vertex_groups[bn].index
+        idxs = [v.index for v in hs.data.vertices
+                if any(g.group == gi and g.weight > 0.5 for g in v.groups)]
+        if not idxs:
+            continue
+        tail = arm.matrix_world @ arm.pose.bones[bn].tail
+        ds = sorted((hc0[i] - tail).length for i in idxs)
+        tips_rest[bn] = {"min_mm": mm(ds[0]), "max_mm": mm(ds[-1])}
+p("B3_fingertip_dist_to_tail_rest", tips_rest)
+
+# ---------------------------------------------------------------- 10. 手部边长畸变
+
+
+def hand_edge_ratio(pose_fn):
+    rig.apply_pose(arm, "rest")
+    bpy.context.view_layer.update()
+    r0, _ = eval_mesh(hs)
+    pose_fn()
+    p1, _ = eval_mesh(hs)
+    er = []
+    for e in hs.data.edges:
+        i, j = e.vertices
+        l0 = (r0[i] - r0[j]).length
+        l1 = (p1[i] - p1[j]).length
+        if l0 > 1e-4:
+            er.append(l1 / l0)
+    er.sort()
+    return {"n": len(er), "max": round(max(er), 3),
+            "p95": round(er[int(0.95 * (len(er) - 1))], 3),
+            "min": round(min(er), 3), "n_gt1.5": sum(1 for r in er if r > 1.5),
+            "n_lt0.6": sum(1 for r in er if r < 0.6)}
+
+
+p("B3_hand_edge_ratio_wave", hand_edge_ratio(lambda: rig.apply_pose(arm, "wave")))
+p("B3_hand_edge_ratio_fingerbend", hand_edge_ratio(apply_finger_bend),
+  "临时姿势：index_proximal.L -45° + index_middle.L -30°（wave 下该指标恒为 1.0，无区分度）")
+
+# ---------------------------------------------------------------- 11. 腕部接缝（固定 rest 腕部顶点索引）
+
+
+def wrist_seam():
+    reset_pose()
+    bpy.context.view_layer.update()
+    hp, _ = eval_mesh(hs)
+    idx = [i for i, q in enumerate(hp) if 0.812 <= q.z <= 0.824 and abs(q.x) > 0.15]
+    res = {"n_fixed_verts": len(idx)}
+    for pose in ("rest", "wave"):
+        if pose == "rest":
+            reset_pose()
+        else:
+            rig.apply_pose(arm, pose)
+        bpy.context.view_layer.update()
+        bp, _ = eval_mesh(b)
+        hp2, _ = eval_mesh(hs)
+        bvh = BVHTree.FromPolygons(bp, [tuple(pg.vertices) for pg in b.data.polygons])
+        inside, outs = 0, []
+        for i in idx:
+            q = hp2[i]
+            loc, nor, _, dist = bvh.find_nearest(q)
+            if loc is None:
+                continue
+            if (q - loc).dot(nor) < 0:
+                inside += 1
+            else:
+                outs.append(dist)
+        res[pose] = {"inside": inside, "outside": len(outs),
+                     "gap_min_mm": mm(min(outs)) if outs else None,
+                     "gap_max_mm": mm(max(outs)) if outs else None}
+    return res
+
+
+p("wrist_seam_fixed_indices", wrist_seam(),
+  "固定 rest 腕部 (z 0.812~0.824) 顶点索引；inside=仍插在前臂体积内")
+
+# ---------------------------------------------------------------- 12. B1 副作用之二：腿是否穿出裙（径向法）
+
+
+def poke(pose):
+    rig.apply_pose(arm, pose)
+    bpy.context.view_layer.update()
+    bp, _ = eval_mesh(b)
+    cp, _ = eval_mesh(cloth)
+    SEG = cfg.RING_SEG
+    rings = {}
+    for q in cp:
+        if q.z > 1.045 or q.z < 0.63:
+            continue
+        ang = int(((math.atan2(q.y - 0.006, q.x) + math.pi) / (2.0 * math.pi)) * SEG) % SEG
+        k = round(q.z, 3)
+        r = math.hypot(q.x, q.y - 0.006)
+        rings.setdefault(k, {}).setdefault(ang, 0.0)
+        rings[k][ang] = max(rings[k][ang], r)
+    ks = sorted(rings)
+
+    def skirt_r(z, ang):
+        if not ks:
+            return None
+        if z <= ks[0]:
+            return rings[ks[0]].get(ang)
+        if z >= ks[-1]:
+            return rings[ks[-1]].get(ang)
+        for a, bb in zip(ks, ks[1:]):
+            if a <= z <= bb:
+                ra, rb = rings[a].get(ang), rings[bb].get(ang)
+                if ra is None or rb is None:
+                    return ra if rb is None else rb
+                t = (z - a) / (bb - a)
+                return ra * (1 - t) + rb * t
+        return None
+
+    n = n_out = 0
+    worst = 0.0
+    for q in bp:
+        if not (0.66 <= q.z <= 1.03 and abs(q.x) > 0.03):
+            continue
+        ang = int(((math.atan2(q.y - 0.006, q.x) + math.pi) / (2.0 * math.pi)) * SEG) % SEG
+        rs = skirt_r(q.z, ang)
+        if rs is None:
+            continue
+        n += 1
+        r = math.hypot(q.x, q.y - 0.006)
+        if r > rs + 0.0005:
+            n_out += 1
+            worst = max(worst, r - rs)
+    return {"n_body_verts": n, "outside(poke)": n_out, "max_poke_mm": mm(worst)}
+
+
+p("B1_poke_rest", poke("rest"), "径向法：Body 腿区 r 与裙面同 z/同角度半径比较")
+p("B1_poke_walk", poke("walk"))
+
+# ---------------------------------------------------------------- 13. 收尾
+
+rig.apply_pose(arm, "rest")
+out_json = os.path.join(LOG_DIR, f"accept_b_{mode}.json")
+
+
+def _san(o):
+    if isinstance(o, dict):
+        return {k: _san(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_san(v) for v in o]
+    if isinstance(o, np.generic):
+        return o.item()
+    if isinstance(o, Vector):
+        return [round(v, 6) for v in o]
+    return o
+
+
+with open(out_json, "w", encoding="utf-8") as f:
+    json.dump(_san(REC), f, ensure_ascii=False, indent=1)
+print(f"[accb] done -> {out_json}")

@@ -1,0 +1,846 @@
+{
+  "algorithm": "halton(n=32) -> sort by score -> top-4 -> coordinate descent (2 rounds, per-dim +/-1 step) -> global best",
+  "baseline_metrics": {
+    "cross_side_leak_pct": 0.0,
+    "finger_edges": 10854,
+    "finger_gt1_5": 35,
+    "finger_lt0_6": 4,
+    "finger_max": 2.3159,
+    "finger_min": 0.5289,
+    "finger_p95": 1.1818,
+    "leak_walk_n": 0,
+    "leak_walk_worst_mm": 0.0,
+    "skirt_arm_led_pct": 0.0,
+    "skirt_loose_mm": 19.09,
+    "skirt_net_min_mm": 7.727,
+    "skirt_net_mm": [
+      14.24,
+      14.698,
+      7.727,
+      14.152
+    ],
+    "skirt_rows_mm": [
+      [
+        [
+          0.0,
+          15.52
+        ],
+        [
+          -40.0,
+          14.24
+        ],
+        [
+          40.0,
+          14.24
+        ]
+      ],
+      [
+        [
+          0.0,
+          16.17
+        ],
+        [
+          -40.0,
+          14.7
+        ],
+        [
+          40.0,
+          14.7
+        ]
+      ],
+      [
+        [
+          0.0,
+          9.12
+        ],
+        [
+          -40.0,
+          7.73
+        ],
+        [
+          40.0,
+          7.73
+        ]
+      ],
+      [
+        [
+          0.0,
+          27.98
+        ],
+        [
+          -40.0,
+          14.15
+        ],
+        [
+          40.0,
+          14.15
+        ]
+      ]
+    ],
+    "wrist_detail": {
+      "L": {
+        "forearm_n": 50,
+        "palm_n": 228,
+        "step_x_mm": 1.755087018013024,
+        "step_y_mm": -0.17889842274598777
+      },
+      "R": {
+        "forearm_n": 49,
+        "palm_n": 228,
+        "step_x_mm": 1.754893302917504,
+        "step_y_mm": -0.16652577323839068
+      }
+    },
+    "wrist_step_x_mm": 1.755,
+    "wrist_step_y_mm": 0.0,
+    "wsum_bad": 0,
+    "wsum_bad_detail": {
+      "Body": 0,
+      "Hands": 0,
+      "Outfit": 0
+    }
+  },
+  "baseline_score": 20.23993,
+  "best_label": "cd_top2",
+  "best_metrics": {
+    "cross_side_leak_pct": 0.0,
+    "finger_edges": 10854,
+    "finger_gt1_5": 21,
+    "finger_lt0_6": 8,
+    "finger_max": 1.7877,
+    "finger_min": 0.5817,
+    "finger_p95": 1.2081,
+    "leak_walk_n": 1,
+    "leak_walk_worst_mm": 1.446,
+    "skirt_arm_led_pct": 0.0,
+    "skirt_loose_mm": 16.02,
+    "skirt_net_min_mm": 6.645,
+    "skirt_net_mm": [
+      14.24,
+      11.05,
+      6.645,
+      14.73
+    ],
+    "skirt_rows_mm": [
+      [
+        [
+          0.0,
+          15.52
+        ],
+        [
+          -40.0,
+          14.24
+        ],
+        [
+          40.0,
+          14.24
+        ]
+      ],
+      [
+        [
+          0.0,
+          12.38
+        ],
+        [
+          -40.0,
+          11.05
+        ],
+        [
+          40.0,
+          11.05
+        ]
+      ],
+      [
+        [
+          0.0,
+          8.0
+        ],
+        [
+          -40.0,
+          6.65
+        ],
+        [
+          40.0,
+          6.65
+        ]
+      ],
+      [
+        [
+          0.0,
+          28.58
+        ],
+        [
+          -40.0,
+          14.73
+        ],
+        [
+          40.0,
+          14.73
+        ]
+      ]
+    ],
+    "wrist_detail": {
+      "L": {
+        "forearm_n": 50,
+        "palm_n": 228,
+        "step_x_mm": 1.755087018013024,
+        "step_y_mm": -0.17889842274598777
+      },
+      "R": {
+        "forearm_n": 49,
+        "palm_n": 228,
+        "step_x_mm": 1.754893302917504,
+        "step_y_mm": -0.16652577323839068
+      }
+    },
+    "wrist_step_x_mm": 1.755,
+    "wrist_step_y_mm": 0.0,
+    "wsum_bad": 0,
+    "wsum_bad_detail": {
+      "Body": 0,
+      "Hands": 0,
+      "Outfit": 0
+    }
+  },
+  "best_params": {
+    "finger_blend_p": 4.5,
+    "finger_smooth_n": 2,
+    "joint_blend_mm": 3.0,
+    "skirt_inner_mode": "peak",
+    "skirt_margin": 0.008
+  },
+  "created": "2026-11-01T10:16:04+08:00",
+  "elapsed_s": 488.3,
+  "hard_violations_baseline": 0,
+  "hard_violations_best": 0,
+  "n_evals": 96,
+  "n_halton": 32,
+  "pixel": {
+    "algorithm": "baseline -> halton(n=16) -> rim_azimuth full enum on the default point (4 azimuths; enum dim never walks +/-1) -> sort by score -> top-1 -> coordinate descent on 5 continuous dims (1 rounds) -> global best (score tie-break = wider rim_band_px); budget=24",
+    "baseline_metrics": {
+      "outline_max": 9,
+      "outline_n": 1346,
+      "outline_p25": 2.0,
+      "outline_p50": 3.0,
+      "outline_p75": 4.0,
+      "outline_zero_pct": 12.33,
+      "res_scale": 1.0,
+      "rim_band_px": 3.0,
+      "rim_band_px_legacy": 11.0,
+      "rim_hair_max": 11,
+      "rim_hair_n": 1,
+      "rim_hair_p50": 11.0,
+      "rim_hair_rows": 511,
+      "rim_lit_hair_max": 11,
+      "rim_lit_hair_n": 11,
+      "rim_lit_hair_p50": 3.0,
+      "rim_lit_hair_rows": 511,
+      "rim_lit_skirt_max": 6,
+      "rim_lit_skirt_n": 40,
+      "rim_lit_skirt_p50": 2.0,
+      "rim_lit_skirt_rows": 185,
+      "rim_q34_max": 12,
+      "rim_q34_n": 128,
+      "rim_q34_p50": 4.0,
+      "rim_skirt_max": 12,
+      "rim_skirt_n": 113,
+      "rim_skirt_p50": 10.0,
+      "rim_skirt_rows": 185,
+      "skin_ge228_pct": 4.77,
+      "skin_n": 152706,
+      "skin_p5": 168.19,
+      "skin_p50": 195.02,
+      "skin_p50_m5": 26.82,
+      "skin_p95": 227.02,
+      "skin_p95_m50": 32.0,
+      "skin_tiers": {
+        "light": 6.6,
+        "mid": 49.1,
+        "shadow": 44.3
+      }
+    },
+    "baseline_score": 4e-06,
+    "best_label": "enum_back_right",
+    "best_metrics": {
+      "outline_max": 9,
+      "outline_n": 1383,
+      "outline_p25": 2.0,
+      "outline_p50": 3.0,
+      "outline_p75": 4.0,
+      "outline_zero_pct": 12.51,
+      "res_scale": 1.0,
+      "rim_band_px": 10.0,
+      "rim_band_px_legacy": 11.0,
+      "rim_hair_max": 11,
+      "rim_hair_n": 1,
+      "rim_hair_p50": 11.0,
+      "rim_hair_rows": 511,
+      "rim_lit_hair_max": 13,
+      "rim_lit_hair_n": 46,
+      "rim_lit_hair_p50": 10.0,
+      "rim_lit_hair_rows": 511,
+      "rim_lit_skirt_max": 2,
+      "rim_lit_skirt_n": 33,
+      "rim_lit_skirt_p50": 2.0,
+      "rim_lit_skirt_rows": 185,
+      "rim_q34_max": 12,
+      "rim_q34_n": 172,
+      "rim_q34_p50": 3.0,
+      "rim_skirt_max": 12,
+      "rim_skirt_n": 111,
+      "rim_skirt_p50": 10.0,
+      "rim_skirt_rows": 184,
+      "skin_ge228_pct": 4.77,
+      "skin_n": 152689,
+      "skin_p5": 168.19,
+      "skin_p50": 195.02,
+      "skin_p50_m5": 26.82,
+      "skin_p95": 227.02,
+      "skin_p95_m50": 32.0,
+      "skin_tiers": {
+        "light": 6.6,
+        "mid": 49.1,
+        "shadow": 44.3
+      }
+    },
+    "best_params": {
+      "key_energy": 49.0,
+      "outline_px": 3.5,
+      "rim_azimuth": "back_right",
+      "rim_energy": 80.0,
+      "skin_pos_light": 0.68,
+      "skin_pos_mid": 0.62
+    },
+    "created": "2026-11-01T11:42:20+08:00",
+    "dim_stats": {
+      "key_energy": {
+        "uniq": 6,
+        "values": {
+          "40.0": {
+            "edge_p50_med": 2.0,
+            "n": 2,
+            "rim_max": 9.0,
+            "skin_p50_med": 190.09
+          },
+          "45.0": {
+            "edge_p50_med": 3.0,
+            "n": 3,
+            "rim_max": 6.0,
+            "skin_p50_med": 192.74
+          },
+          "49.0": {
+            "edge_p50_med": 3.0,
+            "n": 4,
+            "rim_max": 10.0,
+            "skin_p50_med": 195.02
+          },
+          "50.0": {
+            "edge_p50_med": 2.0,
+            "n": 3,
+            "rim_max": 7.0,
+            "skin_p50_med": 196.16
+          },
+          "55.0": {
+            "edge_p50_med": 3.0,
+            "n": 10,
+            "rim_max": 10.0,
+            "skin_p50_med": 196.16
+          },
+          "60.0": {
+            "edge_p50_med": 3.0,
+            "n": 2,
+            "rim_max": 6.5,
+            "skin_p50_med": 228.73
+          }
+        }
+      },
+      "outline_px": {
+        "uniq": 6,
+        "values": {
+          "2.0": {
+            "edge_p50_med": 1.0,
+            "n": 2,
+            "rim_max": 2.5,
+            "skin_p50_med": 197.87
+          },
+          "2.5": {
+            "edge_p50_med": 2.0,
+            "n": 3,
+            "rim_max": 7.0,
+            "skin_p50_med": 196.87
+          },
+          "3.0": {
+            "edge_p50_med": 2.0,
+            "n": 3,
+            "rim_max": 9.0,
+            "skin_p50_med": 195.94
+          },
+          "3.5": {
+            "edge_p50_med": 3.0,
+            "n": 8,
+            "rim_max": 10.0,
+            "skin_p50_med": 195.94
+          },
+          "4.0": {
+            "edge_p50_med": 3.0,
+            "n": 5,
+            "rim_max": 8.0,
+            "skin_p50_med": 195.94
+          },
+          "4.5": {
+            "edge_p50_med": 3.0,
+            "n": 3,
+            "rim_max": 9.0,
+            "skin_p50_med": 195.94
+          }
+        }
+      },
+      "rim_azimuth": {
+        "uniq": 4,
+        "values": {
+          "back": {
+            "edge_p50_med": 2.0,
+            "n": 5,
+            "rim_max": 5.0,
+            "skin_p50_med": 196.16
+          },
+          "back_left": {
+            "edge_p50_med": 3.0,
+            "n": 9,
+            "rim_max": 9.0,
+            "skin_p50_med": 195.94
+          },
+          "back_right": {
+            "edge_p50_med": 2.0,
+            "n": 5,
+            "rim_max": 10.0,
+            "skin_p50_med": 195.02
+          },
+          "left": {
+            "edge_p50_med": 3.0,
+            "n": 5,
+            "rim_max": 7.0,
+            "skin_p50_med": 196.87
+          }
+        }
+      },
+      "rim_energy": {
+        "uniq": 5,
+        "values": {
+          "160.0": {
+            "edge_p50_med": 2.0,
+            "n": 5,
+            "rim_max": 8.0,
+            "skin_p50_med": 195.94
+          },
+          "240.0": {
+            "edge_p50_med": 3.0,
+            "n": 6,
+            "rim_max": 9.0,
+            "skin_p50_med": 195.94
+          },
+          "320.0": {
+            "edge_p50_med": 2.0,
+            "n": 5,
+            "rim_max": 8.0,
+            "skin_p50_med": 195.94
+          },
+          "400.0": {
+            "edge_p50_med": 3.0,
+            "n": 2,
+            "rim_max": 6.5,
+            "skin_p50_med": 228.73
+          },
+          "80.0": {
+            "edge_p50_med": 3.0,
+            "n": 6,
+            "rim_max": 10.0,
+            "skin_p50_med": 195.94
+          }
+        }
+      },
+      "skin_pos_light": {
+        "uniq": 9,
+        "values": {
+          "0.68": {
+            "edge_p50_med": 3.0,
+            "n": 6,
+            "rim_max": 10.0,
+            "skin_p50_med": 195.94
+          },
+          "0.7": {
+            "edge_p50_med": 3.0,
+            "n": 6,
+            "rim_max": 9.0,
+            "skin_p50_med": 195.94
+          },
+          "0.72": {
+            "edge_p50_med": 2.0,
+            "n": 2,
+            "rim_max": 9.0,
+            "skin_p50_med": 223.09
+          },
+          "0.74": {
+            "edge_p50_med": 2.0,
+            "n": 1,
+            "rim_max": 2.0,
+            "skin_p50_med": 189.67
+          },
+          "0.76": {
+            "edge_p50_med": 4.0,
+            "n": 2,
+            "rim_max": 6.0,
+            "skin_p50_med": 192.88
+          },
+          "0.78": {
+            "edge_p50_med": 1.0,
+            "n": 1,
+            "rim_max": 2.0,
+            "skin_p50_med": 190.88
+          },
+          "0.8": {
+            "edge_p50_med": 2.0,
+            "n": 2,
+            "rim_max": 4.5,
+            "skin_p50_med": 196.16
+          },
+          "0.82": {
+            "edge_p50_med": 3.0,
+            "n": 2,
+            "rim_max": 10.0,
+            "skin_p50_med": 196.87
+          },
+          "0.84": {
+            "edge_p50_med": 3.0,
+            "n": 2,
+            "rim_max": 4.5,
+            "skin_p50_med": 196.16
+          }
+        }
+      },
+      "skin_pos_mid": {
+        "uniq": 7,
+        "values": {
+          "0.56": {
+            "edge_p50_med": 3.0,
+            "n": 1,
+            "rim_max": 6.5,
+            "skin_p50_med": 228.73
+          },
+          "0.58": {
+            "edge_p50_med": 2.0,
+            "n": 2,
+            "rim_max": 4.0,
+            "skin_p50_med": 223.09
+          },
+          "0.6": {
+            "edge_p50_med": 2.0,
+            "n": 2,
+            "rim_max": 9.0,
+            "skin_p50_med": 195.94
+          },
+          "0.62": {
+            "edge_p50_med": 3.0,
+            "n": 7,
+            "rim_max": 10.0,
+            "skin_p50_med": 195.02
+          },
+          "0.64": {
+            "edge_p50_med": 3.0,
+            "n": 3,
+            "rim_max": 5.5,
+            "skin_p50_med": 196.16
+          },
+          "0.66": {
+            "edge_p50_med": 2.0,
+            "n": 3,
+            "rim_max": 6.0,
+            "skin_p50_med": 196.16
+          },
+          "0.68": {
+            "edge_p50_med": 3.0,
+            "n": 6,
+            "rim_max": 9.0,
+            "skin_p50_med": 195.94
+          }
+        }
+      }
+    },
+    "elapsed_s": 71.5,
+    "hard_violations_best": 0,
+    "n_evals": 24,
+    "outline_px_controlled_table": {
+      "by_outline_px": {
+        "2.0": {
+          "hard": 1,
+          "outline_p50": 1.0,
+          "rim_band_px": 5.0,
+          "rim_energy": 240.0,
+          "skin_ge228_pct": 16.3,
+          "skin_p50": 195.94,
+          "skin_p50_m5": 27.75,
+          "skin_p95_m50": 33.79
+        },
+        "3.0": {
+          "hard": 0,
+          "outline_p50": 2.0,
+          "rim_band_px": 6.0,
+          "rim_energy": 240.0,
+          "skin_ge228_pct": 16.24,
+          "skin_p50": 195.94,
+          "skin_p50_m5": 27.75,
+          "skin_p95_m50": 33.79
+        },
+        "4.5": {
+          "hard": 0,
+          "outline_p50": 3.0,
+          "rim_band_px": 9.0,
+          "rim_energy": 240.0,
+          "skin_ge228_pct": 16.34,
+          "skin_p50": 195.94,
+          "skin_p50_m5": 27.75,
+          "skin_p95_m50": 33.79
+        }
+      },
+      "by_rim_energy_at_outline_4_5": {
+        "160": {
+          "hard": 0,
+          "outline_p50": 3.0,
+          "rim_band_px": 9.0
+        },
+        "240": {
+          "hard": 0,
+          "outline_p50": 3.0,
+          "rim_band_px": 9.0
+        },
+        "320": {
+          "hard": 0,
+          "outline_p50": 3.0,
+          "rim_band_px": 9.0
+        },
+        "400": {
+          "hard": 0,
+          "outline_p50": 3.0,
+          "rim_band_px": 9.0
+        },
+        "80": {
+          "hard": 0,
+          "outline_p50": 4.0,
+          "rim_band_px": 9.0
+        }
+      },
+      "fixed": {
+        "key_energy": 55.0,
+        "rim_azimuth": "back_left",
+        "skin_pos_light": 0.7,
+        "skin_pos_mid": 0.68
+      },
+      "note": "6 次定点评估（不在 24 次搜索预算内）；固定其余五维，只变 outline_px 或 rim_energy",
+      "source": "opt/logs/px_table.log"
+    },
+    "outline_px_table": {
+      "2.0": {
+        "best_score": 1000004.082369,
+        "n": 2,
+        "outline_p50_median": 1.0,
+        "rim_band_px_max": 2.5,
+        "rim_band_px_median": 2.5
+      },
+      "2.5": {
+        "best_score": 1.034969,
+        "n": 3,
+        "outline_p50_median": 2.0,
+        "rim_band_px_max": 7.0,
+        "rim_band_px_median": 4.0
+      },
+      "3.0": {
+        "best_score": 1000001.008836,
+        "n": 3,
+        "outline_p50_median": 2.0,
+        "rim_band_px_max": 9.0,
+        "rim_band_px_median": 4.5
+      },
+      "3.5": {
+        "best_score": 4e-06,
+        "n": 8,
+        "outline_p50_median": 3.0,
+        "rim_band_px_max": 10.0,
+        "rim_band_px_median": 5.0
+      },
+      "4.0": {
+        "best_score": 0.008836,
+        "n": 5,
+        "outline_p50_median": 3.0,
+        "rim_band_px_max": 8.0,
+        "rim_band_px_median": 8.0
+      },
+      "4.5": {
+        "best_score": 0.008836,
+        "n": 3,
+        "outline_p50_median": 3.0,
+        "rim_band_px_max": 9.0,
+        "rim_band_px_median": 6.5
+      }
+    },
+    "rim_band_px_max": 10.0,
+    "rim_candidate": {
+      "hard": 0,
+      "label": "px_enum_back_right",
+      "metrics": {
+        "outline_max": 9,
+        "outline_n": 1383,
+        "outline_p25": 2.0,
+        "outline_p50": 3.0,
+        "outline_p75": 4.0,
+        "outline_zero_pct": 12.51,
+        "res_scale": 1.0,
+        "rim_band_px": 10.0,
+        "rim_band_px_legacy": 11.0,
+        "rim_hair_max": 11,
+        "rim_hair_n": 1,
+        "rim_hair_p50": 11.0,
+        "rim_hair_rows": 511,
+        "rim_lit_hair_max": 13,
+        "rim_lit_hair_n": 46,
+        "rim_lit_hair_p50": 10.0,
+        "rim_lit_hair_rows": 511,
+        "rim_lit_skirt_max": 2,
+        "rim_lit_skirt_n": 33,
+        "rim_lit_skirt_p50": 2.0,
+        "rim_lit_skirt_rows": 185,
+        "rim_q34_max": 12,
+        "rim_q34_n": 172,
+        "rim_q34_p50": 3.0,
+        "rim_skirt_max": 12,
+        "rim_skirt_n": 111,
+        "rim_skirt_p50": 10.0,
+        "rim_skirt_rows": 184,
+        "skin_ge228_pct": 4.77,
+        "skin_n": 152689,
+        "skin_p5": 168.19,
+        "skin_p50": 195.02,
+        "skin_p50_m5": 26.82,
+        "skin_p95": 227.02,
+        "skin_p95_m50": 32.0,
+        "skin_tiers": {
+          "light": 6.6,
+          "mid": 49.1,
+          "shadow": 44.3
+        }
+      },
+      "params": {
+        "key_energy": 49.0,
+        "outline_px": 3.5,
+        "rim_azimuth": "back_right",
+        "rim_energy": 80.0,
+        "skin_pos_light": 0.68,
+        "skin_pos_mid": 0.62
+      },
+      "rim_band_px": 10.0,
+      "score": 4e-06
+    },
+    "rim_metric": "rim_lit differential: rim lamp ON(E) vs OFF(0) on the same ortho views; pixel counts only when lum_on-lum_off>=8 and the run drops back below that before the scan window ends",
+    "rim_scan_top5": [
+      {
+        "outline_px": 3.5,
+        "rim_azimuth": "back_right",
+        "rim_band_px": 10.0,
+        "rim_band_px_legacy": 11.0,
+        "rim_energy": 80.0,
+        "rim_lit_hair_p50": 10.0,
+        "rim_lit_skirt_p50": 2.0
+      },
+      {
+        "outline_px": 3.5,
+        "rim_azimuth": "back_right",
+        "rim_band_px": 10.0,
+        "rim_band_px_legacy": 11.0,
+        "rim_energy": 80.0,
+        "rim_lit_hair_p50": 10.0,
+        "rim_lit_skirt_p50": 2.0
+      },
+      {
+        "outline_px": 3.0,
+        "rim_azimuth": "back_left",
+        "rim_band_px": 9.0,
+        "rim_band_px_legacy": 10.0,
+        "rim_energy": 240.0,
+        "rim_lit_hair_p50": 9.0,
+        "rim_lit_skirt_p50": 2.0
+      },
+      {
+        "outline_px": 4.5,
+        "rim_azimuth": "back_left",
+        "rim_band_px": 9.0,
+        "rim_band_px_legacy": 10.0,
+        "rim_energy": 240.0,
+        "rim_lit_hair_p50": 9.0,
+        "rim_lit_skirt_p50": 2.0
+      },
+      {
+        "outline_px": 4.0,
+        "rim_azimuth": "back_left",
+        "rim_band_px": 8.0,
+        "rim_band_px_legacy": 10.0,
+        "rim_energy": 160.0,
+        "rim_lit_hair_p50": 8.0,
+        "rim_lit_skirt_p50": 2.0
+      }
+    ],
+    "rim_threshold_px": 2.0,
+    "rim_verdict": "reachable",
+    "score": 4e-06,
+    "seed": 20261101,
+    "skipped_dims": [
+      "top1r1:key_energy(budget)",
+      "top1r1:skin_pos_light(budget)",
+      "top1r1:skin_pos_mid(budget)"
+    ],
+    "soft_best": 4e-06,
+    "trials": "opt/trials_pixel.jsonl"
+  },
+  "rounds": 2,
+  "score": 1.35558,
+  "seed": 20261101,
+  "sensitivity": {
+    "finger_blend_p": {
+      "best": 4.5,
+      "default": 3.5,
+      "delta": 5.38444,
+      "note": "把该维固定在默认值 vs 最优值的 score 差（>0 = 最优值更好）",
+      "score_at_default": 6.74002
+    },
+    "finger_smooth_n": {
+      "best": 2,
+      "default": 6,
+      "delta": 9.68544,
+      "note": "把该维固定在默认值 vs 最优值的 score 差（>0 = 最优值更好）",
+      "score_at_default": 11.04102
+    },
+    "joint_blend_mm": {
+      "best": 3.0,
+      "default": 1.5,
+      "delta": 4.2256,
+      "note": "把该维固定在默认值 vs 最优值的 score 差（>0 = 最优值更好）",
+      "score_at_default": 5.58118
+    },
+    "skirt_inner_mode": {
+      "best": "peak",
+      "default": "valley",
+      "delta": 0.016989,
+      "note": "把该维固定在默认值 vs 最优值的 score 差（>0 = 最优值更好）",
+      "score_at_default": 1.372569
+    },
+    "skirt_margin": {
+      "best": 0.008,
+      "default": 0.003,
+      "delta": 1999999.991241,
+      "note": "把该维固定在默认值 vs 最优值的 score 差（>0 = 最优值更好）",
+      "score_at_default": 2000001.346821
+    }
+  },
+  "soft_baseline": 20.23993,
+  "soft_best": 1.35558,
+  "topk": 4,
+  "trials": "opt/trials.jsonl"
+}

@@ -1,0 +1,9 @@
+# 系统 Python 侧的依赖（Blender 5.2 自带 numpy，无需在这里装）。
+#
+# 用途：跑「不经 Blender」的像素统计与独立复算，例如
+#   _stageA/accept_pixels.py、_stageB/accept_b_pixels.py、_stageD/d_probe.py（纯 Python 模式）
+#
+# 安装：python -m pip install -r requirements.txt
+# 本机实测可用版本（2026-11-01）：numpy 2.4.4、Pillow 11.3.0、Python 3.14.4
+numpy>=1.24
+Pillow>=9.5

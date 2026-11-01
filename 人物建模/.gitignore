@@ -1,0 +1,32 @@
+# 项目级忽略规则（Tools 根 .gitignore 已覆盖 out/、__pycache__/、*.py[cod]；
+# 这里重写一遍是为了在本目录内 `git check-ignore -v` 与 IDE 都看得清）。
+#
+# 明确必须入库的（不要被下面的规则误伤）：
+#   opt/best.json      参数搜索器的最优解（配置，删它=回默认值）
+#   opt/REPORT.md      搜索报告
+#   DESIGN.md / CHANGELOG.md / README.md
+#   所有 *.py（含 _stage*/ 下的探针脚本与 opt/ 的搜索器）
+__pycache__/
+*.py[cod]
+out/
+
+# B 阶段同机位对照图（accept_b_samecam*.py 的渲染产物，2MB，可由脚本重建）
+_stageB/tmp/
+
+# 搜索器运行态：临时渲染、逐次评估日志、试验流水都不入库
+opt/tmp/
+opt/logs/
+opt/trials.jsonl
+opt/trials_pixel.jsonl
+
+# 探针日志（证据链保留在各自 logs/ 目录，但不进 git：体积大且可重跑）
+_stageA/logs/
+_stageB/logs/
+_stageC/logs/
+_stageD/logs/
+_probe/logs/
+
+# Blender 工程与自动备份（美女.blend 可由 m5_rig.py 重建）
+*.blend
+*.blend1
+*.blend2

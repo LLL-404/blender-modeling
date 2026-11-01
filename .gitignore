@@ -1,0 +1,16 @@
+# 跑出来的东西不入库（人物建模/ 与 Blender体检/ 各自有更细的目录级规则）
+out/
+preview/
+__pycache__/
+*.py[cod]
+
+# Godot 编辑器运行态缓存（godot-test/ 是 blender-rig 自带的目检小工程）
+.godot/
+
+# Blender 工程与自动备份（可由脚本重建）
+*.blend
+*.blend1
+*.blend2
+
+# Mimosa 安全钩子运行态
+.mimosa/

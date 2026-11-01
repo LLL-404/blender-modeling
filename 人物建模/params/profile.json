@@ -1,0 +1,47 @@
+{
+  "appearance": {
+    "height": 1.62,
+    "head_to_body_ratio": 6.505,
+    "head_width_scale": 1.0,
+    "face_width_scale": 1.0,
+    "eye_spacing_scale": 1.0,
+    "eye_size_scale": 1.0,
+    "nose_depth_scale": 1.0,
+    "mouth_width_scale": 1.0,
+    "ear_scale": 1.0,
+    "shoulder_width_scale": 1.0,
+    "waist_scale": 1.0,
+    "hip_scale": 1.0,
+    "leg_length_ratio": 0.469,
+    "arm_thickness_scale": 1.0,
+    "hand_scale": 1.0,
+    "foot_size_scale": 1.0
+  },
+  "hair": {
+    "hair_color": [0.115, 0.088, 0.105],
+    "hair_shadow_color": [0.055, 0.050, 0.09],
+    "bangs_groups": 3,
+    "clump_count": 7,
+    "clump_width_scale": 1.0,
+    "clump_thickness_scale": 1.0,
+    "ahoge_length_scale": 1.0,
+    "ahoge_thickness_scale": 1.0,
+    "twin_tails": false
+  },
+  "outfit": {
+    "shirt_color": [0.93, 0.93, 0.95],
+    "skirt_color": [0.072, 0.105, 0.26],
+    "skirt_length": 0.65,
+    "skirt_pleats": 22,
+    "skirt_amplitude_scale": 1.0,
+    "sleeve_length": 1.11,
+    "collar_v_depth": 0.022
+  },
+  "render": {
+    "outline_px": 3.5,
+    "skin_pos_mid": 0.62,
+    "skin_pos_light": 0.68,
+    "key_energy": 49.0,
+    "rim_energy": 80.0
+  }
+}
