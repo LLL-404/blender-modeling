@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """统一构建入口（纯标准库，不 import bpy）。
 
-用法（在项目根 `Tools/人物建模/` 下执行）：
+用法（在项目根 `实用工具/Blender建模/人物建模/` 下执行）：
 
     python scripts/build.py body            # 只跑 m1_body.py
     python scripts/build.py head            # m2_head.py
@@ -9,9 +9,10 @@
     python scripts/build.py hair            # m4_hair.py
     python scripts/build.py outfit          # m5_outfit.py
     python scripts/build.py rig             # m5_rig.py（含 B4 回归断言）
-    python scripts/build.py all             # 依次跑 m1 -> m5_rig
+    python scripts/build.py asset           # M6：E1+E2 UV/四边 → E3 贴图/AO → E4 glb
+    python scripts/build.py all             # 依次跑 m1 -> m5_rig（不含 asset）
     python scripts/build.py check           # 转调 scripts/check.py（全部探针）
-    python scripts/build.py archive         # out/ 与 *.blend 复制到 ../../散件归档/
+    python scripts/build.py archive         # out/ 与 *.blend 复制到 ../../../散件归档/
 
 职责边界：只负责起 Blender 进程并转发退出码，**不解析、不改写**任何模块参数。
 Blender 可执行文件取环境变量 `BLENDER_EXE`，缺省为本机安装路径；
@@ -44,9 +45,19 @@ STEPS = {
 }
 ALL_ORDER = ("body", "head", "look", "hair", "outfit", "rig")
 
+# asset 是多脚本步骤（M6 资产化），单独跑，不并入 all：
+# 它依赖 美女.blend，且 E4 会重导出 glb（约 40s）。
+M6_STEPS = (
+    ("m6_asset.py", "E1+E2 UV 展开与残余三角归因"),
+    ("m6_bake.py", "E3 色板贴图 + AO + 法线一致性"),
+    ("m6_export.py", "E4 去描边壳 + PBR + glb 导出与回读"),
+    ("m6_multiview.py", "E5 16 机位环绕复核（toon vs glb）"),
+)
+
 ARCHIVE_OUT_DIR = "out"
 ARCHIVE_BLEND_GLOB = "*.blend"
-ARCHIVE_REL = os.path.join("..", "..", "散件归档", "人物建模")
+# 归档真身：D:/G/github/散件归档/人物建模/<时间戳>/（从 ROOT 上跳 3 级到 D:/G/github/ 再入 散件归档/）
+ARCHIVE_REL = os.path.join("..", "..", "..", "散件归档", "人物建模")
 
 
 def blender_exe():
@@ -72,7 +83,7 @@ def run_script(step, script, blender):
         print("[build] step={0} exit=2 elapsed=0.0s".format(step), file=sys.stderr)
         return 2, 0.0
 
-    cmd = [blender, "-b", "--factory-startup", "--python", script_path]
+    cmd = [blender, "-b", "--factory-startup", "--python-exit-code", "1", "--python", script_path]
     t0 = time.monotonic()
     try:
         # 不捕获 stdout：Blender 的构建日志直接透传，保留 [ratio]/[render]/[assert] 原文。
@@ -124,7 +135,7 @@ def _count_files(path):
 
 
 def run_archive():
-    """把 out/ 与 *.blend 复制到 ../../散件归档/人物建模/<时间戳>/（复制，不移动）。"""
+    """把 out/ 与 *.blend 复制到 ../../../散件归档/人物建模/<时间戳>/（复制，不移动）。"""
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     dst_root = os.path.abspath(os.path.join(ROOT, ARCHIVE_REL, stamp))
     if os.path.isdir(dst_root):
@@ -164,9 +175,9 @@ def run_archive():
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="build.py",
-        description="人物建模统一构建入口（body|head|look|hair|outfit|rig|check|all|archive）")
-    parser.add_argument("step", choices=list(ALL_ORDER) + ["check", "all", "archive"],
-                        help="构建步骤；all = 依次跑 m1 -> m5_rig")
+        description="人物建模统一构建入口（body|head|look|hair|outfit|rig|asset|check|all|archive）")
+    parser.add_argument("step", choices=list(ALL_ORDER) + ["asset", "check", "all", "archive"],
+                        help="构建步骤；all = 依次跑 m1 -> m5_rig（不含 asset）")
     args = parser.parse_args(argv)
 
     blender = blender_exe()
@@ -182,6 +193,15 @@ def main(argv=None):
     steps = list(ALL_ORDER) if args.step == "all" else [args.step]
     print("[build] root={0}".format(ROOT))
     print("[build] blender={0}".format(blender))
+    if args.step == "asset":
+        for script, desc in M6_STEPS:
+            print("[build] ---- asset: {0} ({1}) ----".format(desc, script))
+            code, _elapsed = run_script("asset:" + script, script, blender)
+            if code != 0:
+                print("[build] 中止：step={0} 退出码 {1}".format(script, code), file=sys.stderr)
+                return code
+        print("[build] done")
+        return 0
     for step in steps:
         script, desc = STEPS[step]
         print("[build] ---- {0}: {1} ({2}) ----".format(step, desc, script))

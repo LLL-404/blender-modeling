@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """一键自检：依次跑 6 个探针，把 PASS/FAIL 汇总到 opt/logs/check_report.md。
 
-用法（在项目根 `Tools/人物建模/` 下）：
+用法（在项目根 `实用工具/Blender建模/人物建模/` 下）：
 
     python scripts/check.py
     python scripts/build.py check          # 等价转调
@@ -78,7 +78,7 @@ def _extract(stdout):
 def _run_probe(blender, path):
     """跑一个探针，返回 (退出码, stdout, 耗时秒)。"""
     t0 = time.monotonic()
-    cmd = [blender, "-b", "--factory-startup", "--python", path]
+    cmd = [blender, "-b", "--factory-startup", "--python-exit-code", "1", "--python", path]
     try:
         proc = subprocess.run(cmd, cwd=ROOT, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, encoding="utf-8", errors="replace")

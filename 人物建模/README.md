@@ -1,8 +1,9 @@
 # 人物建模
 
 用 Python 脚本在 **headless Blender 5.2** 里程序化生成二次元女性角色（原神式三渲二），不手工雕刻：
-`m1~m5_rig` 六个入口 + `lib/` 12 个建模模块 + `opt/` 参数搜索器，全部由 `cfg.py` 的参数表驱动，
-跑一次 `python scripts/build.py all` 就能从空场景重建到「45 骨 + 四姿势 + 描边图」。
+`m1~m5_rig` 六个建模入口 + `m6_asset`/`m6_bake`/`m6_export` 三个资产化入口 + `lib/` 17 个模块 +
+`opt/` 参数搜索器，全部由 `cfg.py` 的参数表驱动。跑一次 `python scripts/build.py all` 就能从空场景
+重建到「45 骨 + 四姿势 + 描边图」；`python scripts/build.py asset` 再加 UV、贴图、AO 并导出 `out/美女.glb`。
 
 - 角色设定基准（6.5 头身、五官/发型/服装意图、配色规范）与 A/B/C/D 四阶段验收表：[DESIGN.md](DESIGN.md)
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)
@@ -17,16 +18,17 @@
 | 系统 Python | 3.10+，装 `numpy` + `Pillow`（仅像素统计/独立复算用，见 [requirements.txt](requirements.txt)） |
 
 ```bash
-cd Tools/人物建模
+cd 实用工具/Blender建模/人物建模
 python -m pip install -r requirements.txt       # 只有系统侧脚本需要
 python scripts/build.py all                     # m1 -> m5_rig 全量重建，产物写 out/
+python scripts/build.py asset                   # E1+E2 UV/四边 → E3 贴图/AO → E4 glb
 python scripts/build.py check                   # 6 个探针自检，报告写 opt/logs/check_report.md
 ```
 
 单步重建（任一非 0 立即停止并转发退出码）：
 
 ```bash
-python scripts/build.py body|head|look|hair|outfit|rig
+python scripts/build.py body|head|look|hair|outfit|rig|asset
 ```
 
 - Blender 不存在时 `build.py` 打印中文提示并 **exit 2**，不会静默失败。
@@ -44,7 +46,11 @@ python scripts/build.py body|head|look|hair|outfit|rig
 | `m4_hair.py` | 头发：发帽 / 后发束 / 刘海 / 侧发 / 呆毛 | 高光带 + 轮廓光验收 |
 | `m5_outfit.py` | 服装：衬衫 / 裙 / 领 / 袖口 / 卷边 | 净空断言内联在 `lib/outfit.py` |
 | `m5_rig.py` | **45 骨**骨架 + 蒙皮 + 4 姿势（rest/wave/walk/reach）+ B4 断言 | 写 `美女.blend`；`lib/rig.py:38` 为骨表 |
-| `lib/`（13 个模块） | `body` `hand` `head` `look` `hair` `outfit` `rig` `mats` `meshkit` `sheet` `shots` `optio` `charparams` | `optio.py` 是搜索器参数注入层（读 `opt/best.json`）；`charparams.py` 是外观旋钮读取层（读 `params/profile.json`），两者都带默认值回退 |
+| `m6_asset.py` | E1+E2：五网格 UV 展开 + 残余三角归因 | 读 `美女.blend`，写 `美女_asset.blend` 与 `out/m6_uv_*.png` |
+| `m6_bake.py` | E3：色板贴图 + AO + 法线一致性 | 写 `out/tex_*_{basecolor,ao}.png` |
+| `m6_export.py` | E4：去描边壳 + 单 PBR + glb 导出与回读 | 写 `out/美女.glb`、`美女_glb.blend`、`out/m6_asset_compare.png` |
+| `m6_multiview.py` | E5：16 机位环绕复核（toon vs glb） | 写 `out/m6_16_{before,after}.png`（4×4）与 `out/m6_16_stats.json` |
+| `lib/`（17 个模块） | `body` `hand` `head` `look` `hair` `outfit` `rig` `mats` `meshkit` `sheet` `shots` `optio` `charparams` `uvkit` `retopo` `bake` `asset` | `optio.py` 是搜索器参数注入层（读 `opt/best.json`）；`charparams.py` 是外观旋钮读取层（读 `params/profile.json`），两者都带默认值回退 |
 | `opt/` | 参数搜索器：`halton` / `space_geom` / `space_pixel` / `eval_geom` / `eval_pixel` / `search` / `search_pixel` / `best.json` / `REPORT.md` | 见下文「参数搜索器」 |
 | `params/` | `profile.json` 外观旋钮（37 键 / 4 组）+ `README.md` 逐键表 | 删掉即回滚到未参数化行为（见下文） |
 | `scripts/` | `build.py` 统一入口、`check.py` 探针自检 | 纯标准库，不 import bpy |
@@ -64,6 +70,7 @@ python scripts/build.py body|head|look|hair|outfit|rig
 | **B 骨架** | 分带权重、左右侧向约束、每手 13 骨替换 `hand.L/R`、Hands 挂骨架 | **45 骨**（fingers=24；21−2+2×13）；裙摆手臂骨主导 **0.00%**（≤5%）；左右串权 **0.000%**（≤0.2%）；Hands 权重和 **bad=0/5540，min=max=1.0000**；Hands rest→wave 的 evaluated bbox 角点位移 **761.3mm**（>50）；每手 13 组与骨名一一对应 | `_stageB/b_probe.py`、`opt/REPORT.md` §4 |
 | **C 三渲二** | 反法线描边、面部阴影层、色阶重标定、头发高光 | 描边暗带 **p50=3px**（全身/上身，目标 2~4）；皮肤 **p50=195.0**（175~215）、**p95−p50=32.0**（≥30）、**p50−p5=26.8**（≥25）、≥228 占 **4.8%**（≤35%）；鼻下 median **168.2**（≤175）；下巴 shadow **77.1%**（≥8%）；手 vs 同侧前臂 **6.8 / 2.0**（≤8）；头发高光 **97.4%** 落在 z∈[1.52,1.60]（≥60%） | `_stageC/c_probe.py`、`opt/trials_pixel.jsonl` |
 | **D 细节** | 刘海分组、后发束减薄、衬衫翻领、袖口卷边、裙褶非对称 | 刘海 **3 组（2/3/2）**、组间缝 **1.5mm**、覆盖额头 **85.2%**（≥70%）；后发束半宽 **19.0mm**（18~24）、厚 **9.0mm**（8~10）、沟壑 **5.6mm**；翻领 **V 深 18.5mm**（≥12）、后领高 **+18.5mm**（≥+8）；卷边可见凸出 **3.3mm**（2~4）、边界边 **0**；裙褶峰谷差 **25.9mm**（≥10）、正面中线为峰 | `_stageD/d_probe.py` |
+| **E 资产化（M6）** | 五网格 UV、残余三角归因、色板/AO 烘焙、去描边壳导 glb、16 机位复核 | UV 岛数 **156/93/46/164/174**、退化三角 **0**、spread **1.18~1.22**；Body/Hands **100% quad**，Head **89.18%**、Hair **94.54%**、Outfit **96.66%**（残余 tri 全为扇面贴片，合并 0）；色板 5×1024²、AO 5×512²、法线修正 **Head 377 / Hair 9828 / Outfit 1280**；`out/美女.glb` **8,633,028 B**、回读 **5 mesh / 45 骨**、权重 **bad=0**；16 机位前后覆盖率差 **≤0.0221**、after 暗像素 **0/16** | `CHANGELOG.md` v0.2.0、`out/m6_e*.json`、`out/m6_16_stats.json`、`DESIGN.md §7` |
 
 **一键复检**：
 
@@ -93,12 +100,13 @@ python scripts/build.py check
 | `out/m4_*.png` | `m4_hair.py` | 否 |
 | `out/m5_face_*.png`、`out/m5_body_*.png`、`out/m5_body.png` | `m5_outfit.py` | 否 |
 | `out/m5_pose_{rest,wave,walk,reach}.png`、`out/m5_poses.png`、`美女.blend` | `m5_rig.py` | `out/`、`*.blend` 否 |
+| `out/m6_uv_*.png`、`out/tex_*_{basecolor,ao}.png`、`out/美女.glb`、`美女_asset.blend`、`美女_glb.blend`、`out/m6_asset_compare.png`、`out/m6_16_{before,after}.png` | `m6_asset.py` / `m6_bake.py` / `m6_export.py` / `m6_multiview.py` | 否 |
 
 按工作区 AGENTS.md 归档（**复制，不移动**，带时间戳子目录，不动工作副本）：
 
 ```bash
 python scripts/build.py archive
-# -> ../../散件归档/人物建模/20261101-113000/  （out/ + *.blend，复制不移动）
+# -> ../../../散件归档/人物建模/20261101-113000/  （out/ + *.blend，复制不移动）
 ```
 
 实现状态：已实现（`scripts/build.py` 的 `run_archive()`）。2026-11-01 用重定向目标
@@ -173,8 +181,13 @@ blender -b --factory-startup --python opt/eval_geom.py -- --use-best
    `trials_pixel` baseline 里 `rim_hair_n=1`（只 1 个像素）。描边与轮廓光在深色区域互相抵消，
    当前参数下只能二选一（取舍与证据见 `opt/REPORT.md`）。
 4. **描边像素宽只在全身/上身达标**：`m3_body_q34` / `m3_upper` / `m5_body_front` 的暗带 **p50=3px**，
-   但脸部特写 `m3_face_front` **p50=7px**、`m4_face_front` **p50=0px**（`c_probe` 2026-11-01 实测，目标 2~4）。
+   但脸部特写 `m3_face_front` **p50=8px**、`m4_face_front` **p50=1px**（`c_probe` 2026-11-02 全量重建后复测，目标 2~4；
+   2026-11-01 记为 7px / 0px，数字已漂移）。
    `Head` 的线宽在 `lib/look.py` 的 `_OL_PX` 里单列，是为两个视图分别换算的，不是同一口径。
+5. **glb 不含描边，AO 也不在 glb 内**：描边是 Solidify 反法线壳，导出前已剥离（否则 glb 会多一圈实体）；
+   引擎侧要用后处理描边。AO 单独落 `out/tex_*_ao.png`，glb 只带 albedo。
+6. **PBR 观感比三渲二浅**：同一张 albedo 在三点光 PBR 下头发偏灰棕（三渲二为深棕近黑），属光照/粗糙度差异，
+   不是贴图错误。回读时 glTF 导入器还会多生成一个 42v/80f 的 `Icosphere` 骨骼辅助网格（不在 glb 内）。
 
 ## 依赖与版本
 

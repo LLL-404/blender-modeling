@@ -13,8 +13,8 @@
 #
 # 跑法（脚本 2026-11-01 迁至 Blender建模仓，产物仍落游戏工程）：
 #   blender --background --python "D:/G/github/实用工具/Blender建模/stardust/gen_human.py"     # 首次/换体型时生成人体
-#   blender --background --python "D:/G/github/实用工具/Blender建模/stardust/build_characters.py"            # 四人四向
-#   blender --background --python "D:/G/github/实用工具/Blender建模/stardust/build_characters.py" -- lila    # 单人
+#   blender --background --python "D:/G/github/实用工具/Blender建模/stardust/build_characters_mpfb.py"            # 四人四向
+#   blender --background --python "D:/G/github/实用工具/Blender建模/stardust/build_characters_mpfb.py" -- lila    # 单人
 #   godot --headless --path . -s res://tools/char_sheet.gd
 #
 # 产物：tools/blender/render_body/<id>_<view>.png（256x384 透明底，四向；游戏工程内）

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# 生成一具 MPFB 基础人体并导出 OBJ（供 build_characters.py 使用）。
+# 生成一具 MPFB 基础人体并导出 OBJ（供 build_characters_mpfb.py 使用）。
 # 跑法：blender --background --python "D:/G/github/实用工具/Blender建模/stardust/gen_human.py"
 # 产物：tools/blender/mpfb/human.obj（约 1.9MB，19k 顶点）
 #

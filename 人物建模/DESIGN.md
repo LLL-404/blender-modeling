@@ -681,6 +681,29 @@ Info: Saved as "美女.blend"
 
 ---
 
+## 七、M6 资产化（E1~E4，2026-11-02）
+
+目标：在不改 M1~M5_rig 几何链路的前提下，把 `美女.blend` 变成可进引擎的资产
+（UV / 贴图 / AO / glb），由 `python scripts/build.py asset` 一键跑完。
+
+| 段 | 做法 | 验收（实测） | 失败回退 |
+|---|---|---|---|
+| **E1 UV** | `uvkit.unwrap()` smart_project 66° + pack；`stats()` 用 sqrt(UV面积/3D面积) 看拉伸；布局图 numpy 自绘（`uv.export_layout` 依赖 GPU） | 五网格岛数 156/93/46/164/174；退化三角 0；spread 1.18~1.22 | 不改 UV 就回滚：删 `美女_asset.blend`，重跑 `m6_asset.py` |
+| **E2 面型** | 只统计与归因，不强行四边化 | Body/Hands 100% quad；Head 89.18%（520 tri）、Hair 94.54%（628）、Outfit 96.66%（320）；`tris_convert_to_quads` 合并 0 | 若将来要真四边化：需先解决「扇面贴片不能成对合并」，否则只能重建拓扑并重传权重 |
+| **E3 贴图** | 色板 = 材质 albedo 填 UV 岛 + 12px dilate + 手写 sRGB；AO = Cycles AO pass（先关全部修改器） | 色板 5 张 1024²、AO 5 张 512²；Body 肤色 (247,224,208) 占 82.1%；法线修正 Head 377 / Hair 9828 / Outfit 1280 | 删 `out/tex_*` 重跑；AO 全 0 时先查修改器是否还开着 |
+| **E4 导出** | 剥离非 Armature 修改器 → 整网格单 PBR（albedo 贴图）→ `export_scene.gltf`（skins，无动画）→ 回读 | `out/美女.glb` 8,633,028 B；5 mesh / 45 骨 / UV / 5 图；权重 bad=0 | 删 `out/美女.glb` 与 `美女_glb.blend`，重跑 `m6_export.py` |
+| **E5 16 机位** | 每 22.5° 一台正交相机；隐藏地板 + `film_transparent`，alpha 分割前景；逐机位统计覆盖率与暗像素 | 前后覆盖率差 0.0137~0.0221（≤0.03，差来自描边壳）；after 16/16 暗像素 0、纯黑 0；`out/m6_16_after.png` 人工复核无破面 | 删 `out/m6_16_*` 重跑 `m6_multiview.py` |
+
+**五条实测坑（别重踩）**
+
+1. **开着 Solidify/Armature 烘焙 AO 会全 0**（`bake_ao` 已临时 mute 修改器）。
+2. **toon 的 albedo 是 base × ramp light**，不是 ramp light；只取后者会让头发从深棕变灰紫。
+3. **`image.save()` 对 float 缓冲是线性直通**，必须手写 sRGB，否则引擎加载偏暗。
+4. **UV 岛必须 dilate**（12px），否则双线性采样采到背景，全身出现黑缝。
+5. **glTF 导入器会多生成一个 Icosphere** 骨骼辅助网格；它不在 glb 里，回读统计按白名单过滤。
+
+---
+
 ## 附：给后续 Generator 的三条硬提醒
 
 1. **不要动 `EYE_X`**（眼距 0.947 已达标），**不要动 `sculpt_torso()` 的签名**（outfit 依赖），**不要为了让手更细把全局 voxel_remesh 改到 2mm**（会把整个构建拖慢一个数量级，手已经用独立的 2mm 体素解决了）。

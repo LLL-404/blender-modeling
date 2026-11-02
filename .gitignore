@@ -14,3 +14,6 @@ __pycache__/
 
 # Mimosa 安全钩子运行态
 .mimosa/
+
+# ZCode 本地运行态
+.zcode/

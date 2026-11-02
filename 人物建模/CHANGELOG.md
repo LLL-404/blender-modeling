@@ -1,5 +1,43 @@
 # 变更记录
 
+## 2026-11-02 / v0.2.0 — M6 资产化（UV / 贴图 / AO / glb）
+
+在 M1~M5_rig 不动的前提下，新增**导出资产管线**：`m6_asset.py`（E1+E2）→
+`m6_bake.py`（E3）→ `m6_export.py`（E4），统一入口 `python scripts/build.py asset`。
+原三渲二渲染链路（`m1~m5_rig`、`out/m*.png`、`美女.blend`）逐位不变。
+
+### 新增
+
+- **`lib/uvkit.py`**：智能展开 + 打包；UV 岛数（并查集）、拉伸分位（sqrt(UV面积/3D面积)）、
+  退化三角、UV 顶点比；numpy 光栅化 UV 布局图（`uv.export_layout` 依赖 GPU，headless 会报
+  `gpu.init` 错误，故不用）。
+- **`lib/retopo.py`**：面型统计、三角按材质归因、`tris_convert_to_quads`。
+- **`lib/bake.py`**：色板贴图、AO 烘焙、法线一致性。`material_albedo()` 取
+  toon 的 **base × ramp light**（不是只取 ramp light）；`_dilate()` 做 12px 边缘扩张；
+  保存前手动做线性→sRGB（实测 `image.save()` 对 float 缓冲是线性直通）。
+- **`lib/asset.py`**：剥离非 Armature 修改器、整网格换单一 PBR 材质、glTF 导出、回读统计。
+- **入口**：`m6_asset.py` / `m6_bake.py` / `m6_export.py`；`scripts/build.py` 新增 `asset` 步骤
+  （多脚本步骤，不并入 `all`）。
+
+### 实测（2026-11-02，`美女.blend` → `美女_asset.blend` → `out/美女.glb`）
+
+| 段 | 实测 |
+|---|---|
+| **E1 UV** | Body/Hands/Head/Hair/Outfit 五网格全部展开；岛数 **156 / 93 / 46 / 164 / 174**；UV 顶点比 **0.270 / 0.327 / 0.302 / 0.333 / 0.342**；拉伸 spread **1.18 / 1.22 / 1.21 / 1.22 / 1.21**；退化三角 **0** |
+| **E2 面型** | Body/Hands **100% 四边**；Head **89.18%**（520 tri，均 skin/sclera/white_emit/iris/pupil）、Hair **94.54%**（628 tri，均 hair）、Outfit **96.66%**（320 tri，均 cloth_white）；`tris_convert_to_quads` 合并 **0** —— 残余三角是五官扇形贴片与发片尖端，不是脏拓扑 |
+| **E3 贴图** | 色板 5 张 1024²（Body 肤色 sRGB **(247,224,208)**，占 82.1%，背景 17.9%）；AO 5 张 512²/8spp（Body 133KB、Hands 220KB、Head 98KB、Hair 105KB、Outfit 153KB）；rest 法线修正 **Head 377 / Hair 9828 / Outfit 1280**，Body/Hands 0 |
+| **E4 导出** | `out/美女.glb` **8,633,028 B**；回读 **5 网格**（Body/Hands/Head/Hair/Outfit）、**45 骨**、每网格 1 层 `UVMap` + 1 个 `pbr_*` 材质、图像 5 张；顶点权重和 **bad=0**（78527/7232/5642/15106/12973）；glb 内 mesh 名 `torso/hair_cap/palm_-1/head/shirt` |
+| **E5 16 机位** | 每 22.5° 一台正交相机，隐藏地板 + `film_transparent`，用 alpha 分割前景。前后前景覆盖率差 **0.0137~0.0221**（≤0.03，差全部来自 3.5px 描边壳外扩）；回读后 **16/16 机位**暗像素占比 **0.0000**（<0.02）、纯黑像素 **0.0000**（<0.005）；`out/m6_16_after.png` 逐格人工复核无破面/缺发/缺衣/悬空 |
+
+### 已知限制（M6）
+
+- **glb 不含描边**：三渲二的黑色轮廓是 Solidify 反法线壳，导出时已剥离；引擎侧需后处理描边
+  （或自定义 shader），不能指望 glb 自带。
+- **AO 未嵌入 glb**：`out/tex_*_ao.png` 单独落盘，供引擎手动接 occlusion；glb 只带 albedo。
+- **PBR 观感比三渲二浅**：同一 albedo 在三点光 PBR 下头发偏灰棕（三渲二为深棕近黑），属光照/材质
+  差异，不是贴图错误；需要接近原观感时在引擎侧压环境光或降低 key。
+- **回读多一个 Icosphere**：glTF 导入器生成的骨骼辅助网格（42v/80f），不在 glb 内，回读统计已归 `extras`。
+
 ## 2026-11-01 / v0.1.0
 
 首版入库。项目此前在工作区根 `D:\G\github\人物建模` 内迭代，本次工程化并迁入 `Tools/人物建模`。
