@@ -12,7 +12,7 @@
 | 一套 headless 批处理脚本 + 一套「AI 读图挑错」方法论，能力面覆盖网格/骨骼/动作/拓扑/UV/法线 | Blender 插件，不需要安装到 Blender 里 |
 | 面向「机器判定」：每条命令都产出可核对的文件（PNG / manifest.json / PASS-FAIL 报告） | 面向「出成品图」：不做后期、不替代美术 |
 | 六个独立模块（`Blender体检` / `人物建模` / `BlenderAPI` / `skills` / `stardust` / `blender-rig`），可单独用，互不依赖 | 一条龙框架，没有共享 SDK，也没有统一 CLI |
-| 与具体工程解耦：脚本本身无凭据、无业务字段 | 完全自包含：`stardust/`、`blender-rig/` 与本机游戏工程有硬编码契约，见「跨仓契约」 |
+| 与具体工程解耦：脚本无凭据、无业务字段；外部工程目录走环境变量（默认指作者本机） | 开箱即用地跑别人的游戏工程：`stardust/`、`blender-rig/` 的默认路径指向本机游戏工程，克隆到别处要设 `STARDUST_DIR` / `REROUTE_GAME_DIR`，见「跨仓契约」 |
 
 ## 能力面 → 落点
 
@@ -43,7 +43,7 @@
 
 ## 快速上手
 
-四条命令足以判断这个仓在你机器上能不能跑：
+七条命令足以判断这个仓在你机器上能不能跑：
 
 ```bash
 # 1) 视检任意 .blend：17 张图 + manifest，约 5 秒
@@ -57,9 +57,36 @@ python "D:/G/github/实用工具/Blender建模/人物建模/scripts/build.py" ch
 
 # 4) 外观 spec 体检：实测 vs spec/reference.json 的 14 条基准，出差值表
 python "D:/G/github/实用工具/Blender建模/人物建模/scripts/build.py" measure
+
+# 5) 游戏可用性审计：面数/拓扑/UV/蒙皮/产物新鲜度 56 项 → out/audit_report.md（exit 1=有 FAIL）
+python "D:/G/github/实用工具/Blender建模/人物建模/scripts/audit.py"
+
+# 6) 全向补视角：顶 / 斜顶 / 仰视×2 / 左脸 / 仰视上半身 / 正后 7 机位 → out/m7_aux_sheet.png
+python "D:/G/github/实用工具/Blender建模/人物建模/scripts/build.py" aux
+python "D:/G/github/实用工具/Blender建模/人物建模/scripts/build.py" aux --nool   # 关描边，看裸几何（产物带 _nool 后缀）
+
+# 7) 交付闸门：四份产物汇成「进游戏」「进作品集」两个结论（exit 1=有目标未过/产物过期）
+python "D:/G/github/实用工具/Blender建模/人物建模/scripts/deliver.py"
 ```
 
-封装层活得到不到，另有第 5 条：`& "<blender>" -b --factory-startup --python-exit-code 1 --python "…/BlenderAPI/selftest.py"`（实测 PASS=36 FAIL=0 SKIP=0，exit 0，约 3.2s）。
+`audit.py` 是「能不能进游戏」的唯一口径：阈值在 `人物建模/spec/game_budget.json`，脚本不写死数字。`--fast` 只解 glb（不启动 Blender，亚秒级）。
+`m7_aux.py` 补的是**仰角盲区**：m2~m5 的 27 个命名机位仰角全在 +0°~+4°、m6 的 16 环绕是 +2°，下半球和正顶从来没被渲过。7 台相机按正交补全布置（±x/±y/+z 各一台 + 斜上 + 仰视两台），并统一挂同功率相机灯——否则左脸是纯背光，p50 比正前低 0.3，没法判左右对称。
+`deliver.py` 是「现在能不能交付」的唯一口径：不重新测量，只读已有产物、判新鲜度、套已知例外；`--run` 会自动补跑缺失/过期的命令。
+
+AI 层（2026-11-03 新增，全部在 `人物建模/scripts/`，不碰构建主链）：
+
+```bash
+cd "D:/G/github/实用工具/Blender建模/人物建模"
+python scripts/brief.py briefs/example.json --json    # brief → profile 受控补丁（默认 dry-run，--apply 才写盘）
+python scripts/rag.py context "带倒角立方体" --out out/rag_context.md   # 检索 catalog/bapi/手册 → Markdown context
+python scripts/run_bapi.py out/candidate.py --expect-file out/candidate.png  # 候选脚本 headless 执行门
+python scripts/visual_review.py validate out/美女_visual_review.json   # 体检问题单（先 init 生成）
+python scripts/bench.py run                            # 内部执行 benchmark：实测 4/4
+```
+
+`brief.py` 只接受 `params/profile.json` 已有的点路径（未知键/超范围报错），不解析自然语言；`rag.py` 不调用 LLM，只负责召回；`run_bapi.py` 不做 OS 沙箱；`visual_review.py` 不做视觉判断，图仍由人或 VLM 看。四者自测分别 14/0、11/0、3/0、4/0，`bench.py` 实测 4/4。
+
+封装层活得到不到，另有一条：`& "<blender>" -b --factory-startup --python-exit-code 1 --python "…/BlenderAPI/selftest.py"`（实测 PASS=36 FAIL=0 SKIP=0，exit 0，约 3.2s）。
 
 体检产物落在 `Blender体检/out/<模型名>/`：`view_000.png` … `view_015.png` + `view_top.png` + `sheet.png`（拼版总览）+ `manifest.json`（相机参数与文件清单）。
 
@@ -68,7 +95,7 @@ python "D:/G/github/实用工具/Blender建模/人物建模/scripts/build.py" me
 | 目录 | 是什么 | 规模 | 详见 |
 |---|---|---|---|
 | `Blender体检/` | 对任意 `.blend` 渲 16 环绕 + 顶视 + 拼版总览，供 AI 读图挑错 | 1 驱动 + 2 脚本 | 其 `README.md` |
-| `人物建模/` | headless 程序化生成二次元角色：六阶段 + 参数搜索器 + 资产化 + spec 外观体检 | 6 入口 + `cfg` + 18 lib + `scripts/` + `spec/` | 其 `README.md` |
+| `人物建模/` | headless 程序化生成二次元角色：六阶段 + 参数搜索器 + 资产化 + spec 外观体检 + AI 层（brief / RAG / 执行门 / 审查 / benchmark） | 6 入口 + `cfg` + 18 lib + `scripts/` + `spec/` + `bench/` + `briefs/` | 其 `README.md` |
 | `BlenderAPI/` | headless 程序化建模封装层：`bapi` 7 子模块（env/obj/mesh/mod/mat/shot/sculpt）+ 扫描的 5.2 API 目录 + 逐项自测 | 8 个 `.py` + `catalog/` 9 件 | 其 `README.md` |
 | `skills/blender-procedural-character/` | 程序化角色方法论 skill：Blender 5.2 API 坑、假达标识别 | 253 行 + 11 篇 references + 2 探针 | `SKILL.md` |
 | `stardust/` | 星尘游戏建模管线：道具 / 角色四向 / 立绘 / MPFB 人体 / glb 导出 | 6 脚本 | 见「跨仓契约」 |
@@ -89,16 +116,23 @@ python "D:/G/github/实用工具/Blender建模/人物建模/scripts/build.py" me
 ```
 Blender建模/
 ├── README.md                 本文件
-├── docs/                     维护指南（SOP + 防污染规则）
+├── docs/                     维护指南（SOP + 防污染规则）+ manual_index.py（手册全文索引）
 ├── prompts/                  会话提示词模板 ×2
 ├── .agent/tools/blender/     机器可读入口索引
 ├── Blender体检/               check.sh + render_views.py + appendix_a.py
 │   └── out/                  体检产物（gitignored）
 ├── 人物建模/                  m1~m5_rig 六入口 + m6 资产化四步 + cfg + lib(18) + scripts + spec(外观基准)
 │   ├── scripts/              build.py（统一入口）/ check.py（六探针）/ measure.py（外观 spec）/
-│   │                         sweep.py（参数响应表）/ bpyrun.py（Blender 定位单源）/ rename_assets.py
+│   │                         audit.py（游戏可用性审计）/ deliver.py（交付闸门）/
+│   │                         brief.py / rag.py / run_bapi.py / visual_review.py / bench.py（AI 层）/
+│   │                         sweep.py（参数响应表）/
+│   │                         bpyrun.py（Blender 定位单源）/ rename_assets.py
+│   ├── bench/                benchmark 任务 + 手写候选（产物落 out/bench/）
+│   ├── briefs/               brief JSON 样例
 │   ├── params/profile.json   39 键外观旋钮
 │   ├── spec/reference.json   14 指标外观验收基准（must/warn）
+│   ├── spec/game_budget.json 游戏可用性预算（面数/拓扑/UV/蒙皮，audit.py 读它）
+│   ├── spec/deliver.json     交付闸门配置（产物清单/两目标/已知例外，deliver.py 读它）
 │   └── opt/                  参数搜索器（halton 采样 + 几何/像素双评估）
 ├── BlenderAPI/               headless 封装层：bapi 7 模块 + catalog/（扫描的 API 目录）+ selftest.py
 │                            （2026-11-03 新增；尚未被现有管线引用）
@@ -195,16 +229,30 @@ bapi.mat.assign(ob, bapi.mat.principled("skin", base_color=(0.9, 0.7, 0.6)))
 
 自测：`blender -b --factory-startup --python-exit-code 1 --python "…/BlenderAPI/selftest.py"` → 实测 **PASS=36 FAIL=0 SKIP=0**（2026-11-03，3.23s）。`catalog/` 是脚本在运行中的 Blender 里扫描出的 API 目录（5.2.2：1129 操作符 / 562 节点 / 83 修改器），**只证明 API 存在，不证明 headless 可用**——可用性以 selftest 为准。详见 `BlenderAPI/README.md`。
 
+### 手册索引
+
+`catalog/` 只答「有什么 API、参数叫什么」，官方手册答「这个参数什么意思、什么时候用」。`docs/manual_index.py` 把离线手册包做成 SQLite FTS5 全文索引，纯 Python、不需要 Blender：
+
+```bash
+python docs/manual_index.py build                    # 2356 页 / 154.3 万字，约 4 秒（索引缺失时查询会自建）
+python docs/manual_index.py "实体化 厚度 偏移"        # 多词 AND，全落空自动退 OR；退出码 0 有结果 / 1 无
+python docs/manual_index.py --api SolidifyModifier   # API 名 → 手册页（短名/全名都行）
+python docs/manual_index.py --selfcheck              # 回归自检 10 项
+```
+
+`objects.inv` 提供 **8274 条交叉引用（含 3311 条 `bpy.types.*`）**：83 类修改器里 76 类、24 个核心类型里 22 个能直接跳到手册对应段落。手册包与索引产物都不入库（`docs/blender_manual_html.zip` 353 MB，超 GitHub 单文件上限），克隆后自备 zip 再 `build` 即可。核对结论（Solidify 的 `offset`/`use_rim` 语义、手册对 API 的覆盖、检索词对照）见 `docs/手册学习笔记.md`。
+
 ### skill
 
 不是"跑"的，是给 AI 读的。CodeArts(Doer) 经 `D:/G/github/.codeartsdoer/skills/blender-procedural-character` 的 junction 自动加载（junction 指向本仓 `skills/…`）。换其他宿主就把该目录复制或链接进它的 skills 目录。
 
 ## 跨仓契约
 
-**这一节是硬约束，脚本里的绝对路径是刻意设计，不要"顺手规范化"。**
+**这一节是硬约束。** 路径的**默认值**是作者本机绝对路径（与游戏仓 `AGENTS.md` 的调用契约一致，不要「顺手规范化」成相对路径）；**指向别的仓的路径一律可被环境变量覆盖**，克隆到别的机器只需设变量、不必改代码。本仓自身的输出目录不由绝对路径写死，一律 `__file__` 推导。
 
 | 契约 | 内容 |
 |---|---|
+| 路径覆盖 | `STARDUST_DIR`（默认 `D:\G\game\games\stardust`）→ `stardust/` 全部 5 个脚本；`REROUTE_GAME_DIR`（默认 `D:\G\game\games\reroute-godot`）→ `blender-rig/rig_buildings.py`。设为其他目录时，所有派生路径跟着走 |
 | stardust 模型与产物 | `.blend`、`render_src/`、`render_body/`、`mpfb/human.obj` 全在 `D:/G/game/games/stardust/tools/blender/`（该目录有 `.gdignore`，**勿删**）。本仓只放脚本 |
 | stardust 消费方 | `build_props.py` → `render_src/` → 游戏 `post_props.gd` → `assets/sprites/props/`；`build_characters.py` → `render_body/` → 游戏 `char_sheet.gd` → `assets/sprites/characters/`；`export_props_glb.py` → `assets/models/` |
 | blender-rig 依赖方向 | **单向**：本仓 → `reroute-godot/assets/models`。入库真身在 reroute-godot 自己的 `assets/models/`，不经本仓中转 |

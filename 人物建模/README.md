@@ -1,7 +1,7 @@
 # 人物建模
 
 用 Python 脚本在 **headless Blender 5.2** 里程序化生成二次元女性角色（原神式三渲二，**7.5 头身**），不手工雕刻：
-`m1~m5_rig` 六个建模入口 + `m6_asset`/`m6_bake`/`m6_export` 三个资产化入口 + `lib/` 18 个模块 +
+`m1~m5_rig` 六个建模入口 + `m6_asset`/`m6_bake`/`m6_export`/`m6_multiview` 四个资产化入口 + `m7_aux` 全向补视角 + `lib/` 18 个模块 +
 `opt/` 参数搜索器，全部由 `cfg.py` 的参数表驱动。跑一次 `python scripts/build.py all` 就能从空场景
 重建到「45 骨 + 四姿势 + 描边图」；`python scripts/build.py asset` 再加 UV、贴图、AO 并导出 `out/美女.glb`。
 外观比例不靠肉眼：`spec/reference.json` 定了 14 条量化基准，`python scripts/build.py measure` 量→判→出表。
@@ -26,6 +26,7 @@ python scripts/build.py all                     # m1 -> m5_rig 全量重建，�
 python scripts/build.py asset                   # E1+E2 UV/四边 → E3 贴图/AO → E4 glb
 python scripts/build.py check                   # 6 个探针自检，报告写 opt/logs/check_report.md
 python scripts/build.py measure                 # 外观 spec 体检：实测 vs 目标（只读 美女.blend）
+python scripts/brief.py briefs/example.json     # brief → profile 受控补丁（dry-run，默认不写盘）
 ```
 
 单步重建（任一非 0 立即停止并转发退出码）：
@@ -37,6 +38,83 @@ python scripts/build.py body|head|look|hair|outfit|rig|asset
 - Blender 不存在时 `build.py` 打印中文提示并 **exit 2**，不会静默失败。
 - `rig` 会写项目根的 `美女.blend`，并跑 B4 回归断言（4 张姿势图 + 权重和 + 关键骨位移）。
 - 构建不依赖当前目录：各入口与 `lib/shots.py:10` 的输出路径都由 `__file__` 推导；`build.py` 仍把 `cwd` 固定为项目根以统一行为。
+
+## Brief 入口（结构化 brief → 受控参数）
+
+`scripts/brief.py` 是 AI/人写 brief 的**受控落点**：brief JSON 里的 `set` 只接受 `params/profile.json` 已有的点路径，按 `params/README.md` 的建议范围、类型和 enum 校验；未知键、超范围、类型不符直接报错；未接线键、以及 `hair.style != long` 下无效的发束键会给 warning，避免“改了没效果”。它**不解析自然语言**：`brief` 字段只作记录，真正的意图要先由人或 LLM 落成 `set` 点路径。
+
+```json
+{
+  "brief": "7.5 头身、bob 短发、藏青裙的少女",
+  "set": {
+    "appearance.height": 1.68,
+    "hair.style": "bob"
+  }
+}
+```
+
+```bash
+python scripts/brief.py briefs/example.json          # dry-run，打印现值/新值/判定
+python scripts/brief.py briefs/example.json --json   # 机器可读，供 agent 消费
+python scripts/brief.py briefs/example.json --apply  # 写 profile；原文件备份到 out/brief/
+python scripts/brief.py briefs/example.json --apply --run  # 写盘后跑 build/measure/check/audit
+python scripts/brief.py --selftest                   # 14 项校验/写盘/验证链测试，不碰真实 profile
+```
+
+`--run` 默认把 `build.py all` 和 `measure.py` 当 blocking（失败即停），`build.py check` 与 `audit.py --fast` 当 advisory（记录但不阻断，因为当前有已知 R4/面数/非流形 FAIL）；`--strict` 可把 advisory 也升级为失败。`asset`/`deliver` 只在需要资产和交付时单独跑。
+
+注意：`build.py all` 最后一步会 `save_as_mainfile` 重写 `美女.blend`。只想校验 brief 参数时不要带 `--run`；确需全链验证时，先确认当前 `.blend` 可重建或已有备份。
+
+## RAG 入口（检索 → bapi 代码提案）
+
+`scripts/rag.py` 把 **catalog（5.2.2 实机 API 目录）+ bapi 源码 + lib 源码 + 离线手册** 建成一个本地 FTS5 索引，按任务检索出一份 Markdown context，交给 agent 写 bapi 代码。它**不调用 LLM**；调用方拿到 context 后写代码，写完仍走 `BlenderAPI/selftest.py` / `build.py check` / `measure.py` 验证。
+
+```bash
+python scripts/rag.py build                    # 建/重建 out/rag/rag.db（约 0.4s，2300+ chunks）
+python scripts/rag.py query "倒角 宽度"        # 本地代码/API + 手册联合检索
+python scripts/rag.py context "做一个带倒角的立方体，正交渲染" --out out/rag_context.md
+python scripts/rag.py selftest                 # 临时索引 + 8 条检索 + 锚点/context 共 11 项
+```
+
+排序先验：`bapi` 函数 +10、`lib` 范例 +4、catalog 0；中文词会额外扩展英文 API 词（倒角→bevel、实体化→solidify、蒙皮→skin weight 等）。对查询里的中文名词另加**同名函数锚点**（如「球体」→ `bapi.mesh.sphere`），避免只命中一个词的短函数被通用块挤出 top；context 里带「约束 / 精确命中 / bapi 可用函数 / 仓内范例 / API 目录 / 手册语义 / 输出契约」各段，输出契约要求只回 `{plan, code, checks}` JSON。
+
+候选代码写完后用执行门跑一遍：
+
+```bash
+python scripts/run_bapi.py out/candidate.py \
+  --expect-file out/demo.png --expect-text "[demo]" --json
+```
+
+`run_bapi.py` 走 headless `--factory-startup --python-exit-code 1`，捕获退出码/耗时/stdout/stderr，并检查期望文件非空、期望文本出现；候选脚本默认必须在 `out/` 下（`--allow-any` 才放行其它目录）。它不做 OS 级沙箱——候选脚本仍是可执行代码。
+
+## 视觉审查问题单
+
+`scripts/visual_review.py` 把「AI 读体检图挑错」这一步落成机器可读 JSON：`init` 从 `Blender体检` 的 manifest 生成视图清单与渲染完整性检查，`validate` 校验字段/枚举/视图名/重复 id，`summary` 出计数与 Markdown 表。它**不做视觉判断**，图仍由人或 VLM 看。
+
+```bash
+python scripts/visual_review.py init \
+  --manifest ../Blender体检/out/美女/manifest.json \
+  --out out/美女_visual_review.json
+python scripts/visual_review.py validate out/美女_visual_review.json
+python scripts/visual_review.py summary out/美女_visual_review.json
+python scripts/visual_review.py selftest
+```
+
+`problems[]` 每条至少含 `id / view / severity / category / description / script_fixable / status`；`view` 允许具体图名、`sheet.png` 或 `all`。当前实测：对 `美女.blend` 跑 8 视角 → P1「地面撑爆取景」判为 high/camera，用 `check.sh --ignore "floor*"` 重渲后角色撑满画幅，P1 转 fixed；P2「sheet 空白格深灰」按 Q2 契约保留为 accepted。
+
+## 内部执行 benchmark（RAG 命中 + 候选执行）
+
+`scripts/bench.py` 把「检索是否召回到该用的 API」和「候选脚本能否在 headless 里跑出非空产物」合成一条可重复基线。它不是 LLM 评测：候选是手写的 golden solution，测的是 RAG + `run_bapi.py` 执行门 + 本机环境。
+
+```bash
+python scripts/bench.py list            # 看任务
+python scripts/bench.py selftest        # 用 cube_bevel 做真实验证
+python scripts/bench.py run             # 跑全部，写 out/bench/latest.{json,md}
+python scripts/bench.py run --task cube_bevel --json   # 单任务，stdout 纯 JSON
+python scripts/bench.py run --candidate-dir out/candidates  # 换候选目录（文件名 = <id>.py）
+```
+
+每个任务在 `bench/tasks.json` 里定义：`rag_query`、`expect_rag_any`（锚点或 top 命中其一即可）、`candidate`、`timeout`、`expect_file`、`expect_text`。运行时会复制候选到 `out/bench/run-<时间戳>/`，把 `BENCH_OUT_DIR` / `BAPI_DIR` 传进去，再走 `run_bapi.run_candidate`。当前 4 任务（倒角立方体 / 球体材质 / 圆柱 Solidify / 立方体 Subsurf）实测 **4/4 全过、pass_rate 1.0、总墙钟约 6.8s、平均 1.69s/任务**。
 
 ## 目录结构
 
@@ -53,11 +131,13 @@ python scripts/build.py body|head|look|hair|outfit|rig|asset
 | `m6_bake.py` | E3：色板贴图 + AO + 法线一致性 | 写 `out/tex_*_{basecolor,ao}.png` |
 | `m6_export.py` | E4：去描边壳 + 单 PBR + glb 导出与回读 | 写 `out/美女.glb`、`美女_glb.blend`、`out/m6_asset_compare.png` |
 | `m6_multiview.py` | E5：16 机位环绕复核（toon vs glb） | 写 `out/m6_16_{before,after}.png`（4×4）与 `out/m6_16_stats.json` |
+| `m7_aux.py` | **全向补视角**：顶/斜顶/仰视×2/左脸/仰视上半身/正后 共 7 机位，补 m2~m5 全平视（+0°~+4°）留下的下半球与正顶盲区；`--nool` 关描边看裸几何 | 写 `out/m7_aux_*.png`、`out/m7_aux_sheet.png`、`out/m7_aux_stats.json` |
 | `lib/`（18 个模块） | `body` `hand` `head` `look` `hair` `outfit` `rig` `mats` `meshkit` `sheet` `shots` `optio` `charparams` `appearance` `uvkit` `retopo` `bake` `asset` | `optio.py` 是搜索器参数注入层（读 `opt/best.json`）；`charparams.py` 是外观旋钮读取层（读 `params/profile.json`），两者都带默认值回退；`appearance.py` 是外观量测层（形状→纯数字，供 `measure.py` 判定） |
 | `opt/` | 参数搜索器：`halton` / `space_geom` / `space_pixel` / `eval_geom` / `eval_pixel` / `search` / `search_pixel` / `best.json` / `REPORT.md` | 见下文「参数搜索器」 |
 | `spec/reference.json` | **外观验收基准表**：14 指标 × `target`/`tol`（或 `min`/`max`）× `level`(must/warn) × `source`（数字从哪来） | 单一来源；`measure.py --spec` 可换表；当前是「修长少女 · 7.5 头身」 |
 | `params/` | `profile.json` 外观旋钮（39 键 / 4 组）+ `README.md` 逐键表 | 删掉即回滚到未参数化行为（见下文） |
-| `scripts/` | `build.py` 统一入口（body/head/look/hair/outfit/rig/asset/check/measure/all/archive）、`check.py` 六探针自检、`measure.py` 外观 spec 体检、`sweep.py` 参数响应表、`bpyrun.py` Blender 定位单源、`rename_assets.py` 资产改名 | 纯标准库，不 import bpy |
+| `scripts/` | `build.py` 统一入口（body/head/look/hair/outfit/rig/asset/check/measure/all/archive）、`check.py` 六探针自检、`measure.py` 外观 spec 体检、`brief.py` brief→profile 受控补丁、`rag.py` 检索→bapi context、`run_bapi.py` 候选脚本执行门、`visual_review.py` 视觉审查问题单、`bench.py` 内部执行 benchmark、`sweep.py` 参数响应表、`bpyrun.py` Blender 定位单源、`rename_assets.py` 资产改名 | 纯标准库，不 import bpy |
+| `bench/` | `tasks.json` 4 个执行任务 + `candidates/*.py` 手写 golden 候选 | 任务格式见 `scripts/bench.py`；`out/bench/` 产物不入库 |
 | `_stageA/` `_stageB/` `_stageC/` `_stageD/` | 各阶段探针与独立复算脚本（证据链，保留） | 探针日志 `_stage*/logs/` 不入库 |
 | `_probe/` | `rig_probe.py`（早期骨架探针，已被 `b_probe.py` 取代，留档）+ `appearance_probe.py`（外观量测探针，被 `measure.py` 驱动） | 只读：不渲染、不保存、不改物体 |
 | `out/` | 渲染产物（png）与量测 JSON，**不入库** | 可由入口重跑重建 |

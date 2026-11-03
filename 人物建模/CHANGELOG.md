@@ -1,5 +1,331 @@
 # 变更记录
 
+## 2026-11-03 / v0.11.0 — 内部执行 benchmark + RAG 名词锚点
+
+### 为什么加
+
+v0.9 只证明了「RAG context → 手写 bapi → headless 跑通」能成一次；一次成功不是基线。补一个可重复的内部 benchmark：每个任务先查 RAG 必须命中指定 API，再把候选脚本放进独立 run 目录，用 `run_bapi.py` 的同一套门（退出码 / 期望文件非空 / 期望文本）执行，记录墙钟与产物大小。以后改检索或包装层，能直接看出是「召回掉了」还是「执行坏了」。
+
+第一次跑就暴露一个召回问题：`球体 材质 Principled 渲染` 里 `bapi.mesh.sphere` 掉出 top 12——同时命中 material / principled / render 的通用块，把只命中 sphere 的短函数挤了下去。修法是给查询里的中文名词加「同名函数锚点」，不靠调 bm25 权重碰运气。
+
+### 做了什么
+
+- 新增 `bench/tasks.json` + `bench/candidates/*.py`（4 任务：倒角立方体 / 球体材质 / 圆柱 Solidify / 立方体 Subsurf），候选脚本自带面数、材质槽、产物大小断言。
+- 新增 `scripts/bench.py`：`list` / `run [--task] [--candidate-dir] [--timeout] [--json]` / `selftest`；产物落 `out/bench/run-<时间戳>/`，汇总写 `out/bench/latest.json` 与 `latest.md`；`--json` 的进度行改走 stderr，stdout 保持纯 JSON。
+- `rag.py` 新增名词锚点：按 `SYNONYMS` 映射出的英文词，取标题末段同名的 bapi/lib 函数（最多 4 条，不参与 bm25 打分）；`query()` 返回 `anchors`，`format_context()` 在 bapi 段前新增「查询名词精确命中（先看签名）」，同一函数不重复列；`selftest` 从 10 项加到 **11 项**。
+- 候选断言加强：bevel ≥100 面、solidify ≥180 面、subsurf ≥90 面、材质槽必须为 `bench`，避免「脚本 exit 0 但修改器/材质没生效」也判过。
+
+### 判据
+
+| 项 | 结果 |
+|---|---|
+| `python scripts/rag.py selftest` | **PASS=11 FAIL=0**（新增「球体 → bapi.mesh.sphere」锚点用例） |
+| `python scripts/bench.py selftest` | **PASS cube_bevel rag+exec** |
+| `python scripts/bench.py run` | **4/4 全过**：rag 4/4、exec 4/4、pass_rate **1.0**、总墙钟 **6.794s**、平均 **1.686s/任务** |
+| cube_bevel | 150 polys / 256,268 B PNG / 1.698s |
+| sphere_material | 1152 polys / 275,573 B PNG / 1.634s |
+| cylinder_solidify | 192 polys（素圆柱 96，Solidify 后翻倍）/ 287,962 B PNG / 1.716s |
+| cube_subsurf | 96 polys / 264,389 B PNG / 1.689s |
+| 四张产物 | 逐张读过：倒角立方体、球、圆柱、细分立方体，均不是黑图/空图；圆柱第一版因误用 `camera_ortho(height=...)` 拍成空帧，改成倾斜物体后重渲确认 |
+
+### 边界
+
+- **候选脚本是手写的 golden solution，不是 LLM 生成**。它测的是「RAG 召回 + run_bapi 执行门 + 环境」这条基线，不代表模型写代码的成功率。
+- 锚点只认「标题末段 == 名词」，是确定性实体链接，不做语义消歧；同名函数不存在时不补位。
+- `bench` 产物全在 `out/`（已 gitignore），不入库；任务定义与候选脚本在 `bench/`，入库。
+
+## 2026-11-03 / v0.10.0 — 视觉审查问题单 + 体检 ignore
+
+### 为什么加
+
+`Blender体检/README.md` 的闭环第 3 步是「按视角列结构化问题」，但产物一直只存在于会话文字。研究对照里的 P2 也是「VLM 审图 → 结构化问题单 → 修复 patch」。这次把问题单落成 schema/validator/summary，并用真实 `美女.blend` 走了一轮「审图 → 判可脚本修 → 改渲染脚本 → 重渲 → 复核」。
+
+### 做了什么
+
+- 新增 `scripts/visual_review.py`：`init` 从 manifest 生成视图清单/渲染完整性检查；`validate` 校验 `id/view/severity/category/status/description/script_fixable` 与渲染文件；`summary` 出计数和 Markdown 表；`selftest` 4 项。
+- `Blender体检/render_views.py` + `check.sh` 新增 `--ignore "floor*,ground*"`：按 glob 隐藏辅助对象并排除出取景；只改运行中场景，不保存 `.blend`；manifest 新增 `ignored` 字段。
+- `Blender体检/README.md` 参数表/已知限制/闭环第 3 步登记；`人物建模/README.md` 加「视觉审查问题单」段。
+
+### 判据（真实模型，不是合成图）
+
+| 项 | 结果 |
+|---|---|
+| `python scripts/visual_review.py --selftest` | **PASS=4 FAIL=0** |
+| `check.sh 美女.blend --views 8 --res 512` | 8 环绕 + 顶视 + sheet + manifest；3.34s；**角色只占约 40px/512** |
+| `visual_review.py init` | 9 views / 11 render checks / 0 problems；validate ok |
+| P1（high/camera） | 「大地面 floor 12×12 撑爆取景」→ `check.sh --ignore "floor*"` 重渲 3.08s；角色撑满画幅；manifest.ignored=["floor"]；P1 → fixed |
+| P2（low/other） | 「sheet 空白格 0.35 深灰」→ 保留 Q2 契约值，P2 → accepted |
+| `visual_review.py validate/summary` | ok=True；counts problems=2/open=0/fixed=1/high=1 |
+
+### 边界
+
+- `visual_review.py` **不做视觉判断**；图仍由人或 VLM 看，它只保证问题单可校验、可计数、可追踪。
+- `out/美女_visual_review.json`、`Blender体检/out/美女/` 都是本地证据，不入库。
+- `--ignore` 只影响本次渲染的隐藏与取景，不改源 `.blend`；默认仍不忽略任何对象，避免“偷偷少渲染”。
+
+## 2026-11-03 / v0.9.0 — RAG → bapi context（检索层）
+
+### 为什么加
+
+研究对照里最直接的空白不是“模型不会写 bpy”，而是**没有把本仓版本正确的 API/写法喂给它**。BlenderRAG 用 500 个案例把编译成功率从 40.8% 提到 70%；本仓已经有 `catalog/`（5.2.2 实机扫描）、`bapi/`、`lib/` 和离线手册，缺的只是检索与上下文打包。
+
+### 做了什么
+
+- 新增 `scripts/rag.py`：从 `BlenderAPI/catalog/api.json`、`catalog/*.md`、`BlenderAPI/bapi/*.py`、`人物建模/lib/*.py` 采集 2333 个 chunk，建 FTS5；`query` 联合本地索引与 `docs/manual/manual.db`；`context` 输出六段 Markdown（约束 / bapi 函数 / 仓内范例 / API 目录 / 手册语义 / 输出契约）；`selftest` 建临时索引跑 8 条检索用例 + 格式断言。
+- 新增 `scripts/run_bapi.py`：候选脚本执行门，headless Blender + `--factory-startup`，捕获退出码/耗时/stdout/stderr，检查期望文件非空与期望文本；默认只允许 `out/` 下的候选，`--allow-any` 才放行其它目录；不做 OS 沙箱。
+- 中文查询扩展英文 API 词（倒角→bevel、实体化→solidify、立方体→cube、蒙皮→skin weight 等）；bm25 分数加 kind 先验（bapi +10 / lib +4 / catalog 0），避免“83 个修改器”这类目录大块霸榜。
+- **不调用 LLM**：context 交给 agent/人写代码，写完仍走 `BlenderAPI/selftest.py`、`build.py check`、`measure.py`。
+
+### 判据
+
+| 项 | 结果 |
+|---|---|
+| `python scripts/rag.py build` | 2333 chunks / 3.2 MB / 0.36s |
+| `python scripts/rag.py selftest` | **PASS=10 FAIL=0**（8 条检索 + 建索引 + context 格式） |
+| `python scripts/rag.py context "做一个带倒角的立方体，正交渲染"` | 2957 chars；bapi 段含 `bapi.mod.bevel` / `bapi.mesh.cube` / `bapi.shot.camera_ortho` |
+| 按 context 写 `out/rag_demo.py` 并 headless 跑 | **exit 0**；`beveled_cube` 152 verts / 150 polys；`out/rag_demo.png` 256,268 B；已读图确认是带倒角的立方体，不是黑图 |
+| `python scripts/run_bapi.py --selftest` | **PASS=3 FAIL=0**（good candidate / bad exit 3 拒绝 / 缺期望文件拒绝） |
+| `python scripts/run_bapi.py out/rag_demo.py --expect-file out/rag_demo.png --expect-text "[demo]" --json` | **exit 0 / elapsed 1.855s / ok=true**；文件 256,268 B 存在；stderr 空 |
+
+### 边界
+
+- 只是检索与上下文打包，不是端到端代码生成器；`out/rag_demo.py` 与 `out/rag_demo.png` 是本地验证产物，不入库。
+- 手册索引 `docs/manual/manual.db` 与手册 zip 都不入库；换机器要先按 `docs/manual_index.py` 建索引。
+- context 仍可能带无关 catalog 条目；排序先验只保证 bapi/lib 在分数接近时优先，不替代人工判断。
+
+## 2026-11-03 / v0.8.0 — brief→profile 受控参数入口
+
+### 为什么加
+
+研究对照发现，本项目缺的不是“更会写 bpy 的模型”，而是**把自然语言先落成受控参数**的那一层。让 LLM 直接写代码会把 API 错用、部件悬空引进产线；先把意图落成 `profile.json` 的点路径，再用现有 `build`/`measure`/`audit` 验收，风险最低。
+
+### 做了什么
+
+- 新增 `scripts/brief.py`：读 brief JSON，按当前 profile 的键/类型/`params/README.md` 建议范围做校验；未知键、类型不符、超范围直接报错；未接线键、`hair.style != long` 下无效的发束键给 warning；默认 dry-run，`--apply` 备份到 `out/brief/` 后原子写盘；`--json` 供 agent 消费。
+- `--run`：写盘后按 `build.py all`（blocking）→ `measure.py`（blocking）→ `build.py check`（advisory）→ `audit.py --fast`（advisory）跑验证链；`--strict` 把 advisory 升级为失败。
+- 新增 `briefs/example.json`：7.5 头身 / bob / 藏青裙的示例 brief。
+- `README.md`、`params/README.md`、`.agent/tools/blender/index.md`、`docs/工程梳理与维护指南.md` 登记入口与用法。
+
+### 判据
+
+| 项 | 结果 |
+|---|---|
+| `python scripts/brief.py --selftest` | **PASS=14 FAIL=0**（校验/类型/范围/未接线 warning/写盘+备份/非法 patch 拒写，加 4 条验证链 blocking/advisory/strict 行为） |
+| `python scripts/brief.py briefs/example.json` | dry-run 出 4 行差值表；`appearance.height` 1.62→1.68、`hair.style` cards→bob、`outfit.skirt_length` 0.65→0.62，exit 0 |
+| 临时 profile `--apply` | 写入 1.68/bob，其他键保持不变，备份存在，exit 0 |
+
+### 边界
+
+- **不解析自然语言**：`brief` 字段只作记录，真正的意图要先由人或 LLM 写成 `set` 点路径；本脚本只负责校验和落盘。
+- 不代表外观已经达标：写盘后仍要跑 `build.py all` → `check` → `measure`；`audit`/`deliver` 另算。
+
+## 2026-11-03 / v0.7.0 — 头发换成 hair card 表示法（CHARM 5 参数）
+
+### 为什么换
+
+旧的鲍伯壳是「一圈椭圆环按高度缩放」再放样：每一层截面都是椭圆，**结构上不可能
+有分缕**；而且必须封顶，封顶就一定有瑕 —— 颅顶那个旋涡/肚脐，改到第 4 次
+（抬收口半径、改平滑方式、合并顶环、加步数）仍然在，只是从一个坑变成另一个坑。
+
+调研后发现二次元头发有公认表示法：**CHARM**（SIGGRAPH Asia 2025，清华）用
+「控制点 + 宽 + 厚」5 参数描述一张发片，截面是菱形，变换完全可逆；
+**HairDeck**（2026-10-29，Apache-2.0）实测平均每个发型约 70 张 card，
+AnimeHair 数据集有 37K 个。按 CHARM 的公式实现，见 `lib/haircard.py`。
+
+### 结构
+
+```
+_cap()          发帽      —— 头皮底色，盖住顶部
+_bob_shell()    壳        —— 提供体积与轮廓
+_cards_bob()    18 张卡片 —— 贴在壳外的表面分缕
+_cards_fringe() 7 张卡片  —— 刘海
+```
+
+壳负责「看起来有体积」，卡片只负责「表面有一绺一绺」。只要卡片、不要壳，
+两侧和后面会是空心薄片阵列，读成贴纸或湿发（实测 v2/v3）。
+
+`hair.style` 新增第三个取值 `cards`（`bob` / `long` 保留不动）。
+`params/profile.json` 的默认值改为 `cards`。
+
+### 三个把卡片「变没」的 bug（都靠图才发现）
+
+| 症状 | 根因 |
+|---|---|
+| 卡片整圈被埋，只有头顶露一点（花冠） | 卡片半径只跟 `_BOB_ROWS` 表值，而壳里是 `max(表值×_RX_K, 头骨+_HAIR_T)` —— 中下段壳被头骨撑大，卡片反而更小 |
+| 同上，且卡片退化成等半径竖柱 | `_bob_dense()` 返回**升序**（-0.09 → 0.907），`at()` 的插值按降序写，每个 t 都命中第一个分支、全返回最低处半径 |
+| 抬高卡片后仍被埋 | 壳有 `Solidify(thickness=0.0045, offset=-1)`，卡片外表面要超过「壳基准面 + 4.5mm」才看得见 |
+
+### 判据
+
+| 项 | 结果 |
+|---|---|
+| `measure.py` | **13 PASS / 0 FAIL / 1 WARN**（WARN = 发顶高出头骨 14.0mm） |
+| `check.py` | **PASS 71 / FAIL 1 / SKIP 125 / CRASH 0**（唯一 FAIL 是既有的 R4 屈指 min=0.582） |
+| `m7_aux` 七机位 | 0 failed |
+| `audit.py --fast` | PASS 45 / WARN 8 / FAIL 3（面数、Head 非流形为既有；「产物新鲜度」是改了 blend 没重跑 asset，属预期） |
+
+两处口径随之更新，理由都写在文件里：
+
+1. **`hair_cap_gap` 目标 17mm → 48±14mm**。这条量的是「上 1/3 高度里 Hair 与 Head
+   的前后跨度差」，Hair 现在含卡片（壳外 5.5mm + 半厚 1.8mm），实测 20.2 → 44.9mm。
+   44.9mm 不是缺陷：鲍伯头头发深度 ≈ 头高的 0.97。旧 target 是「单层发帽」的口径。
+2. **`d_probe.py` 的 D1/D2 五条在 `cards` 下同样 SKIP**（`bob` 与 `cards` 都没有
+   long 专用的后发束与 3 组刘海）。
+
+### 已知遗留（都在图上看得到）
+
+| 位置 | 现象 |
+|---|---|
+| 整个头发 | 分缕的沟偏深偏规则，读成「南瓜瓣/大蒜」，参考图是几道浅沟 |
+| 正面刘海 | 7 绺竖条末端平齐，像梳齿；参考图的刘海有长短参差与内扣 |
+| 侧面 | 中下段有一处凸起/撕裂（壳与卡片的交叠） |
+| 顶视 | 发帽圆盘与周围卡片之间有一圈台阶，圆盘中心仍有小凹 |
+
+这些都是「调参 + 局部几何」级别的问题，不再是范式问题。
+
+## 2026-11-03 / v0.6.0 — 全向补视角（m7_aux.py）：补掉仰角盲区
+
+起因是一句追问：「你有几个机位来确认建模？」把 27 个命名机位逐个抽出 `loc`/`zc`
+算出方位角与仰角之后，答案很难看：
+
+| 体系 | 机位数 | 方位角 | 仰角 |
+|---|---|---|---|
+| `lib/shots.py` 命名机位 | 27 | 只有 0° / 31.4° / 42.6° / 90° / 180° 五档 | **全部 +0°~+4°** |
+| `m6_multiview.py` 环绕 | 16 | 22.5° 全覆盖 | +2° |
+| `Blender体检` 环绕 + 顶视 | 17 | 22.5° 全覆盖 | **+20° 俯视 / +90° 正顶**（但 `out/` 是空的，**从未在人物上真跑过**） |
+
+也就是说：**下半球和正顶从来没有被渲染过**。下颌底面、腋下、袖口内壁、颅顶收口
+这些位置出问题，四个判据入口一个都看不见。另外 27 个机位的 x 全是正数，
+高清侧脸只有**右脸**。
+
+### 补了哪 7 台
+
+按正交补全定数量，不按「哪有缺陷」定 —— 缺陷会变，判据得稳定。
+±x / ±y / +z 每个方向至少一台，另加斜上、斜下各一台：
+
+| 机位 | 方向 | 查什么 |
+|---|---|---|
+| `aux_face_top` | +z 正顶 | 颅顶收口、左右对称 |
+| `aux_face_top_q34` | 斜上 48° | 颅顶小尖、发帽与外壳交界 |
+| `aux_face_low_front` | 仰视 30° | 下颌底、下巴-颈交界、鼻底 |
+| `aux_face_low_q34` | 仰视 28° 3/4 | 下颌底 + 颊下沿 |
+| `aux_face_side_l` | −x 左 | 左脸（此前只有右脸有 0.52mm/px 精度） |
+| `aux_upper_low` | 仰视 31° 上半身 | 腋下、袖口内壁、锁骨下 |
+| `aux_body_back` | +y 正后全身 | 腰背、腿后侧、后颈 |
+
+`−z` 正下方没做：站姿的人物从正下看只有脚底，没有信息量，用仰视两台代表下半球。
+
+### 两个必须记的实现细节
+
+1. **照明必须统一，否则图不能互比**。场景三点光固定在世界坐标（key 在左前），
+   从 −x 看就是纯背光：实测 `p50=0.570`，而正前是 `0.876` —— 同一个发色差 0.3，
+   肉眼是两种颜色，判不了对称。改成每台相机挂一盏**同功率相机灯**
+   （14W / size 3.0），`p50` 收到 0.651~0.864，`dark` 全 0.0000。
+2. **`--nool` 不能按材质名 hide 对象**。描边不是独立物体，而是每个网格上挂的
+   `Solidify` 修改器（名字 `Outline`，`offset=+1`，靠 `material_offset` 指向
+   `outline` 材质槽）。按「材质名含 outline」去 `hide_render` 会把整个人藏掉
+   —— 首次实测七张全空、`cov=0.0000`。正确做法是关掉该修改器的 `show_render`。
+   `--nool` 的产物带 `_nool` 后缀，两种模式共存，便于并排判「是描边还是几何」。
+
+### 一跑就暴露的三个问题（都不是机位问题）
+
+| 位置 | 现象 | 归因（用 `--nool` 对比确认） |
+|---|---|---|
+| 左侧头顶 | 一条横贯的水平黑线 | **描边壳**：发帽与鲍伯壳交界处的开放边被勾出来，关描边即消失 |
+| 头顶 / 斜顶 | 纵向折痕 + Y 形褶皱 | **真几何**：发帽球冠收口不规则，关描边后更清楚 |
+| 侧脸 | 一道"抓痕"状浅凹 | **真几何**（浅） |
+| 仰视全角度 | 下颌几乎没有立体结构 | **真几何**：平视时靠脸颊收窄"装"出的尖下巴，一仰视就露馅 |
+
+第 4 条是平视机位在原理上永远查不到的，也是这轮加机位最直接的收益。
+
+### 接口
+
+```
+python 人物建模/scripts/build.py aux           # 7 机位 → out/m7_aux_*.png + sheet + stats
+python 人物建模/scripts/build.py aux --nool    # 关描边看裸几何
+```
+
+`build.py` 的 `run_script` 增加了 `extra` 参数用于透传 `--` 之后的参数（18.9s / exit 0）。
+产物清单：7 张单图 + `m7_aux_sheet.png`（4×2 拼版）+ `m7_aux_stats.json`（与 m6 同口径的
+`cov`/`dark`/`black`/`p50`，便于以后并入交付闸门）。
+
+断言语义只判「相机没拍空」`cov>0.02` 与「没有大面积纯黑」`black<=0.45`。
+没有沿用 m6 的 `dark<=0.12`：顶视与仰视本来就会拍到背光面，用那个阈值会全红，
+红色警报不区分「真破面」和「这一面本来就暗」。
+
+## 2026-11-03 / v0.5.1 — 交付闸门（scripts/deliver.py）
+
+到 v0.5.0，项目里有**四个**判据入口、四份产物，但没有一个回答「**现在能不能交付**」：
+
+| 入口 | 产物 | 判什么 |
+|---|---|---|
+| `build.py measure` | `out/appearance_report.json` | 像不像参考图 |
+| `build.py asset` | `out/m6_16_stats.json` | 16 机位渲染有没有硬伤 |
+| `scripts/audit.py` | `out/audit.json` | 能不能进引擎 |
+| `build.py check` | `opt/logs/check_report.md` | 绑定有没有坏 |
+
+新增 `scripts/deliver.py` + `spec/deliver.json`。BOSS 2026-11-03 定：**进游戏和进作品集两个都要**，所以闸门给两个结论而不是一个。
+
+- **不重新测量**：只读已有产物、判新鲜度、套已知例外、给结论。跑一次毫秒级；产物过期就说「重跑哪条命令」，`--run` 直接补跑（按 `sources` 数组顺序，`views` 排在 `asset` 前，因为它的 producer 会重出 glb）。
+- **新鲜度判定**：产物 mtime 必须不早于 `美女.blend`。改完模型不重跑 → 直接 STALE，不给「拿旧数据报捷」的机会。
+- **已知例外显式化**：`rig` 的 `R4 finger_bend`（屈指最小边比 0.582 < 0.6）写在 `spec/deliver.json` 里，带理由和待办。豁免必须留证据，不能在代码里硬编码忽略。
+
+首次结论（2026-11-03 20:55）：
+
+| 目标 | 结论 | 卡在哪 |
+|---|---|---|
+| 进游戏 | **还不行** | 总三角面 201,830（预算 60,000）、Head 非流形边 628 |
+| 进作品集 | **可以交付** | 外观 13 PASS / 1 WARN、16 机位最大覆盖率差 0.0222（阈 0.03）、绑定回归经豁免后全过 |
+
+踩坑一条：状态最初在套例外**之前**算，结果 FAIL 被摘掉了、`ok` 还留在 False，界面同时显示「PASS 71 / FAIL 1」和红色。改成豁免后再统一重算状态（`blocking - excused <= 0 and extra == 0`）。
+
+## 2026-11-03 / v0.5.0 — 游戏可用性审计（scripts/audit.py）
+
+目标从这一版起明确为「**真进游戏用**」，原来三个判据入口各管一段，没有任何一个回答「能不能塞进引擎」：
+
+| 入口 | 判什么 | 不管什么 |
+|---|---|---|
+| `measure.py` | 像不像参考图（14 项外观） | 面数、UV、拓扑 |
+| `check.py` | 绑定有没有坏（六探针） | 资产预算 |
+| `m6_export.py` | 导出这一步有没有崩（自带断言） | 只在导出时跑，平时看不见 |
+
+新增 `scripts/audit.py` + `spec/game_budget.json`：一次跑完 **56 项**，给 PASS/WARN/FAIL 与退出码。
+
+- **双模式单文件**：外层系统 Python 解 glb（不启动 Blender，`--fast` 亚秒级），带 `--blender-side` 时在 Blender 里量结构。避免「探针与外层判据不同步」。
+- **阈值全在 `spec/game_budget.json`**，脚本不写死数字；每项带 `why` 说明为什么卡这个数。
+- **判据两处按事实修正**（不是放宽）：
+  - 「四边面百分比 ≥90%」降为 warn。`Head` 实测 89.2%，差的那部分是**五官扇形贴片**，结构上合并不了；拿百分比当硬判据会天天报假警。
+  - 改成 **「可合并三角面 = 0」** 做硬判据：在网格**副本**上真跑 `tris_convert_to_quads`，数实际能合并掉多少，原网格不动。实测五个网格全是 0，与 `m6_asset.py` 的 E2 结论一致。
+  - 「每顶点最多 4 骨」降为 warn：glTF 导出器会按权重截断并重新归一化，资产不会崩，但与 DCC 预览会有形变差。真硬判据改成**在 glb 里验 `WEIGHTS_0` 之和**（引擎真正拿到的那份）。
+- **新增「产物新鲜度」检查**：`美女.blend → 美女_asset.blend → out/美女.glb` 时间戳必须递进。拿 6 小时前的旧 glb 判「能进游戏」比不判更糟。
+
+首次审计结论（2026-11-03，重跑 M6 资产链后的新鲜产物，共 56 项）：
+
+- **FAIL 2**：
+  - 总三角面 **201,830**（预算 60,000，超 3.4 倍）
+  - Head **非流形边 628 条**（预算 0）
+- **WARN 8**：5 个网格单项面数全超预算（躯干 146,044 占 **72.4%**、服装 18,828、头发 17,560、手 11,072、头 8,326）；Body/Hands 每顶点 **5 根**骨影响；Head 四边面 88.2%
+- **PASS 46**：5 网格 × 5 组顶点属性齐全、45 骨 / 1 skin、5 材质 5 贴图、8.2 MB、UV 全有、**glb 权重和 0 偏离**、产物时间戳递进
+
+结论直白：**技术链路是通的，卡在面数**。躯干一项就吃掉 72%，是唯一值得先动的地方；Head 那 628 条非流形边是第二优先。
+
+第一次跑时审计对象搞错了两次，记下来免得有人重犯：
+
+1. 默认拿 `美女.blend`（工作文件）去查 UV → 四个网格全 FAIL。UV 是 `m6_asset.py` 阶段才展开的，结构审计必须看 `美女_asset.blend`。
+2. 「可合并三角面」最初用几何近似（相邻 + 法线夹角 ≤40°），报出 Head 520 / Hair 626 / Outfit 320，与 `m6_asset.py` 的「实测 0 合并」矛盾。原因：算子还看四边形形状与 UV/锐边/材质边界。改成**在副本上真跑一次算子**，结果归零 —— 判据必须和工程实际用的算子一致，近似比不查更糟。
+
+审计没覆盖的项（UV 重叠面积、贴图色彩空间、LOD、引擎内实渲染）写在报告的最后一节，避免「全绿＝能上线」的误读。
+
+## 2026-11-03 / v0.4.1 — 仓独立化：路径可配置（默认值不变）
+
+`stardust/`、`blender-rig/` 原来把本机绝对路径写死在代码里，clone 到别处就跑不了，与「独立项目」的定位矛盾。改法保持**默认行为逐字符不变**，只增加覆盖能力：
+
+- `blender-rig/`（4 脚本）：`OUT` / `IMG` 改由 `__file__` 推导（原本写死 `D:\G\github\实用工具\Blender建模\blender-rig\...`），与 README 已声明的「输出路径由 `__file__` 推导」一致。
+- `stardust/`（5 脚本）：游戏工程根改为 `os.environ.get("STARDUST_DIR", <原路径>)`；`blender-rig/rig_buildings.py` 同理用 `REROUTE_GAME_DIR`。不设变量时解析结果与原硬编码路径**逐字符相同**，游戏仓 `AGENTS.md` 的调用契约不受影响。
+- 文档：仓根 README 跨仓契约段从「绝对路径是刻意设计，不要顺手规范化」改为「默认值是本机路径、可被环境变量覆盖」；`docs/工程梳理与维护指南.md` 第 63 条同步。
+
+验证：9 个脚本 `py_compile` 全过；用 AST 求值（真实执行 `os.environ.get` + `os.path.join`）逐条比对，默认值下 9 条路径与原值完全一致；设 `STARDUST_DIR=E:/other/stardust` 后派生路径整体跟随。
+
 ## 2026-11-03 / v0.4.0 — spec 驱动外观验收 + 发型两处遗留修复 + S8/S9 重构收口
 
 本轮不是新造型轮：把 v0.3.0 的成果变成**可复测的验收通道**，修掉两处已登记的 bob 发型硬伤，

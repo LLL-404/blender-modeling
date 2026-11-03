@@ -82,6 +82,25 @@ description: >-
 - **`Image.pixels` 还是 bottom-up 存储，PIL 是 top-down**：`buf.reshape(h,w,4)` 的行 0 是图像**最底行**。只做全图分位统计时两种顺序结果相同，看不出问题（A 阶段的探针就因此「看起来逐位一致」）；但一旦有按 `(px, py)` 定位的 ROI 或像素→世界 z 的反投影，整张图会静默上下颠倒——实测同一张 `m3_face_front.png`，鼻下 ROI 中位亮度 168.2（正确）vs 195.9（翻转后），头发高光 in-band 从 97.6% 变成 0%。修法是在 bpy 分支末尾加 `[::-1]`：`... .astype(np.uint8)[::-1]`。**两种读图方式必须用同一张图交叉核对一次具体像素坐标**（不要只比全图分位数），否则这个坑会一直藏着
 - **Blender 内置 python 没有 Pillow**（`importlib.util.find_spec('PIL')` 返回 None），Pillow 在系统 python 里。探针要写成「优先 `from PIL import`，ImportError 时用 `bpy.data.images.load` + `pixels.foreach_get` 走同一判据」，并额外用系统 `python -c` 跑一遍 Pillow 核对两边逐位一致，再引用数字。numpy 在 Blender 内置 python 里是有的，直接拿来用
 - **numpy 布尔索引在多维数组上极易写错**：`a[:,0]` 取的是第二维第 0 列，不是通道 0；RGB 数组要写 `a[:,:,0]`。这个错在图像统计脚本里会静默地把 mask 形状搞成 `(h,3)`，最后报一个「boolean index did not match indexed array along axis 1」的费解错误
+- **界面「工作区」在 headless 下不存在**（`-b` 没有视口），能用的只是它们背后的数据/API。2026-11-03 把 Blender 顶部那 11 个标签逐个实测：
+
+  | 工作区 | headless | 实测依据 |
+  |---|---|---|
+  | 布局 / 建模 / 脚本 | 能 | 对象变换与选择、编辑模式挤出+细分（f=30）、bmesh 倒角 |
+  | UV编辑 | 能 | `uv.smart_project` + `uv.pack_islands` 生出 UVMap |
+  | 着色 | 能 | Principled + 贴图节点，`Base Color` 的 `links` 成立 |
+  | 渲染 | 能 | EEVEE 出 PNG |
+  | 合成 | 能 | `scene.compositing_node_group` 建树成功 |
+  | 几何节点 | 能 | 建树 + `NODES` 修改器，求值后顶点数随之变化 |
+  | 动画 | 能 | 关键帧写入并求值（第 1/12/24 帧 z = 0 / 0.935 / 2.0） |
+  | 雕刻 | **半能** | 能进 `SCULPT` 模式、多级精度能细分（114 → 1922 顶点）；`sculpt.brush_stroke` 报 `poll() failed, context is incorrect` |
+  | 纹理绘制 | **半能** | 能直接写 `Image.pixels`；但 `--factory-startup` 下 `bpy.data.brushes` 为 **0 个**（`bapi/sculpt.py` 记的是不带 factory-startup 时只有 1 个 `Draw`），`wm.tool_set_by_brush_type` 返回 `CANCELLED` |
+
+  结论：**手绘笔画这条路走不通，也不要走** —— 笔画不可复现、不能 diff、进不了判据。要用「参数化修改器（位移/多级精度/雕刻遮罩生成的顶点组）+ 直接写像素」替代。
+- **Blender 5.2 两处破坏性 API 变更**（实测，写代码前先看）：
+  - `bpy.ops.paint.*` 整个命名空间**已不存在**，笔刷改由 `bpy.ops.wm.tool_set_by_brush_type` 管（headless 下无笔刷数据，返回 `CANCELLED`）。
+  - `Action.fcurves` **已移除**。改读 `act.layers[0].strips[0].channelbag(act.slots[0]).fcurves`；`act.is_action_layered` 恒为 True。照旧版教程写 `for fc in act.fcurves` 会直接 AttributeError。
+- **查参数语义先查手册，别凭记忆**：`python "…/Blender建模/docs/manual_index.py" "实体化 偏移"` 检索离线中文手册（2356 页 / 154 万字，入口登记在 `.agent/tools/blender/index.md`）；`--api SolidifyModifier` 把 API 名直接映射到手册页，`--show <页>` 打全文。分工：`BlenderAPI/catalog/` 给「参数叫什么、默认值多少」，手册给「它什么意思、什么时候用」——两者不可互相替代。手册用词和口语不一致时先看 `docs/手册学习笔记.md` §5 的对照表（「重新网格化」手册写「重构网格」）
 
 ## 几何套路（踩过的坑）
 
