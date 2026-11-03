@@ -94,6 +94,69 @@ def _zone_mask(nt, x0, y0, z_lo, z_hi, x_half, y_max):
     return _mul(xy_ok, y_ok, (x0 + 750, y0 - 180))
 
 
+def _nose_mask(nt, x0, y0, zc, z_half, x_half, feather=0.55, y_max=-0.02):
+    """鼻下**椭圆软阴影**掩码（返回 0~1 标量 socket）。
+
+    为什么不用 `_zone_mask`：那个是硬盒（GREATER_THAN × LESS_THAN），在光滑的
+    浅色脸上会渲成一个边界锐利的灰色矩形贴片 —— 2026-11-03 的实拍就是这个问题。
+    这里改成径向椭圆：r = sqrt((x/x_half)^2 + ((z−zc)/z_half)^2)，r 在
+    [1−feather, 1] 之间做 smoothstep 渐灭，读起来才是「鼻子底下的影」。
+    """
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    geo.location = (x0, y0)
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    sep.location = (x0 + 150, y0)
+    nt.links.new(geo.outputs["Position"], sep.inputs["Vector"])
+
+    def _m(op, loc):
+        n = nt.nodes.new("ShaderNodeMath")
+        n.operation = op
+        n.location = loc
+        return n
+
+    ux = _m('DIVIDE', (x0 + 300, y0))
+    nt.links.new(sep.outputs["X"], ux.inputs[0])
+    ux.inputs[1].default_value = x_half
+    ux2 = _m('POWER', (x0 + 450, y0))
+    nt.links.new(ux.outputs[0], ux2.inputs[0])
+    ux2.inputs[1].default_value = 2.0
+
+    dz = _m('SUBTRACT', (x0 + 300, y0 - 150))
+    nt.links.new(sep.outputs["Z"], dz.inputs[0])
+    dz.inputs[1].default_value = zc
+    uz = _m('DIVIDE', (x0 + 450, y0 - 150))
+    nt.links.new(dz.outputs[0], uz.inputs[0])
+    uz.inputs[1].default_value = z_half
+    uz2 = _m('POWER', (x0 + 600, y0 - 150))
+    nt.links.new(uz.outputs[0], uz2.inputs[0])
+    uz2.inputs[1].default_value = 2.0
+
+    s = _m('ADD', (x0 + 750, y0 - 75))
+    nt.links.new(ux2.outputs[0], s.inputs[0])
+    nt.links.new(uz2.outputs[0], s.inputs[1])
+    r = _m('SQRT', (x0 + 900, y0 - 75))
+    nt.links.new(s.outputs[0], r.inputs[0])
+
+    mr = nt.nodes.new("ShaderNodeMapRange")
+    mr.location = (x0 + 1050, y0 - 75)
+    mr.interpolation_type = 'SMOOTHSTEP'
+    mr.inputs["From Min"].default_value = 1.0 - feather
+    mr.inputs["From Max"].default_value = 1.0
+    mr.inputs["To Min"].default_value = 1.0
+    mr.inputs["To Max"].default_value = 0.0
+    mr.clamp = True
+    nt.links.new(r.outputs[0], mr.inputs["Value"])
+
+    y_ok = _m('LESS_THAN', (x0 + 900, y0 - 300))
+    nt.links.new(sep.outputs["Y"], y_ok.inputs[0])
+    y_ok.inputs[1].default_value = y_max
+
+    out = _m('MULTIPLY', (x0 + 1200, y0 - 150))
+    nt.links.new(mr.outputs["Result"], out.inputs[0])
+    nt.links.new(y_ok.outputs[0], out.inputs[1])
+    return out.outputs[0]
+
+
 def toon(name, base, shadow, mid, light,
          pos=(0.0, 0.46, 0.74), strength=1.0, rough=0.5,
          face_bias=0.0, nose_band=None):
@@ -149,8 +212,9 @@ def toon(name, base, shadow, mid, light,
         zones.append((_zone_mask(nt, -700, -260, _sz(1.38), 9.0, 9.0, -0.02),
                       face_bias))
     if nose_band:
-        zones.append((_zone_mask(nt, -700, -520, nose_band["z"][0],
-                                 nose_band["z"][1], nose_band["x_half"], -0.02),
+        zones.append((_nose_mask(nt, -700, -520, nose_band["zc"],
+                                 nose_band["z_half"], nose_band["x_half"],
+                                 feather=nose_band.get("feather", 0.55)),
                       nose_band["bias"]))
     if zones:
         loc_y = -100
@@ -311,7 +375,11 @@ def set_all():
     FACE_BIAS = -0.15
     # 鼻下硬阴影带（DESIGN 的「辅」项，本轮用材质节点实现，不动 head.py）。
     # 原始口径 z 1.437~1.452（鼻底内收 1.446 下方 3~5mm），过 _sz 映射。
-    NOSE_BAND = dict(z=(_sz(1.437), _sz(1.452)), x_half=0.012, bias=-0.60)
+    # 鼻下阴影：2026-11-03 由硬盒（z 区间 + x 半宽，边界零衰减）改为椭圆软衰减。
+    # 原实现 bias=-0.60 在浅色脸上渲成一块边界锐利的灰色矩形；现取 -0.32 + 径向渐灭，
+    # 读作「鼻底下的影」而不是「贴上去的灰方块」。中心 z 取原区间中点。
+    NOSE_BAND = dict(zc=_sz(1.4445), z_half=0.0075, x_half=0.011,
+                     feather=0.60, bias=-0.32)
     # C3 色阶重标定：ramp 切分位置 (0.0, 0.35, 0.62) → (0.0, 0.55, 0.85)。
     # 色值本身不动（mid−shadow 26.3%、light−mid 17.7% 都合格），只让 mid 档
     # 吃到的像素变多。配合 shots.KEY_ENERGY 70→49W 一起作用。
@@ -367,7 +435,7 @@ def hair_material(name="hair",
                   shadow=(0.055, 0.050, 0.090),
                   mid=(0.190, 0.150, 0.200),
                   light=(0.430, 0.360, 0.395),
-                  ring=(0.640, 0.560, 0.820)):
+                  ring=(0.060, 0.055, 0.075)):
     """深棕黑发 + 天使环：在 z≈1.54 / 1.34 两道横向高光带。"""
     mat = toon(name, base, shadow=shadow, mid=mid, light=light,
                pos=(0.0, 0.34, 0.62), strength=1.0)
@@ -391,27 +459,83 @@ def hair_material(name="hair",
 
     band = nt.nodes.new("ShaderNodeValToRGB")
     band.location = (-60, -320)
-    band.color_ramp.interpolation = 'CONSTANT'
+    band.color_ramp.interpolation = 'EASE'
     cr = band.color_ramp
     cr.elements[0].position = 0.0
     cr.elements[0].color = (0, 0, 0, 1)
     # C4：MapRange 0.95→1.66 ⇒ p = (z − 0.95)/0.71。
-    # 两道高光带全部放进「颅顶下方 1/5」，即 z 1.52~1.60（p 0.803~0.915）：
-    #   带1 [0.803, 0.845] → z 1.520~1.550
-    #   带2 [0.858, 0.915] → z 1.559~1.600
-    # 说明：DESIGN §2.4.5 字面要求「上边界 0.845 → 0.90~0.92、带宽 +0.03」。
-    # 实测照做后验收指标反而从 63.7% 掉到 **3.66%** —— 因为 p99 的最亮像素
-    # 主要来自**下面那道带**（0.585 → z 1.365），只上移上带等于把高光推到
-    # 1.60 以上。所以这里按验收目标（p99 落在 z 1.52~1.60）反推带宽位置。
-    cr.elements[1].position = 0.803
-    cr.elements[1].color = (1, 1, 1, 1)
-    e2 = cr.elements.new(0.845)
+    # ---- 2026-11-03 重标定：环带位置随 6.5 头身重算 ----
+    # 旧值 0.803/0.845/0.858/0.915 → z 1.520/1.550/1.559/1.600，是**A 阶段把整个人头
+    # 绕 z=1.5857 放大 1.0631 并下移 12.7672mm 之前**定的。头骨下移后这两条带没跟着
+    # 重算，于是整块落到了刘海（世界 z 1.512~1.588）上 —— 正面渲成一条白纸带。
+    # 现按「颅顶前五分之一」重算：头顶 1.6200、下巴 1.3710，前五分之一 = z 1.570~1.620；
+    # 带放 1.594~1.610 与 1.618~1.632，正好在刘海顶端（1.588）之上、颅顶壳上。
+    #   带1 [0.907, 0.930] → z 1.594~1.610
+    #   带2 [0.941, 0.961] → z 1.618~1.632
+    # 单环 + EASE 软边：z 1.598~1.616（p 0.913~0.938）。
+    # 两条硬边厚带（1.594~1.610 + 1.618~1.632，CONSTANT）实测在正面渲成一整条白护额，
+    # 改成单条 + 软边 + 降亮后才是「头顶的一道光」。环色默认值同时从
+    # (0.640,0.560,0.820) 降到 (0.340,0.290,0.420)：ADD 是加在近黑的发色（≈0.05）上，
+    # 加 0.64 直接到 0.69 线性（sRGB≈215），必然烧白。
+    # 单环 + 软边：0.905 黑 → 0.925 白 → 0.945 黑（z 1.593~1.621，峰在 1.607）。
+    # **必须在环起点前再放一个黑元素**：ColorRamp 的 EASE 只在相邻两元素之间插值，
+    # 若只有「0.0 黑 → 0.913 白」，整段 z 0.95~1.60 都会被插成渐变，渲出来是
+    # 头顶一大片灰白雾（2026-11-03 实测踩过，见 out/m4_face_front.png 的中间版本）。
+    cr.elements[1].position = 0.910
+    cr.elements[1].color = (0, 0, 0, 1)
+    e1 = cr.elements.new(0.924)
+    e1.color = (1, 1, 1, 1)
+    e2 = cr.elements.new(0.938)
     e2.color = (0, 0, 0, 1)
-    e3 = cr.elements.new(0.858)
-    e3.color = (1, 1, 1, 1)
-    e4 = cr.elements.new(0.915)
-    e4.color = (0, 0, 0, 1)
     links.new(mr.outputs["Result"], band.inputs["Fac"])
+
+    # ---- 天使环的**位置**遮罩（2026-11-03）----
+    # 原实现只按 z 分带，而刘海整块落在 z 1.512~1.588 里，于是刘海正面也吃到 ADD
+    # 环色，渲成一条发白的纸带/护额（out/m5_face_front.png 实拍）。
+    # 为什么不用表面法线：纯绿环实测（out/_test_ring_green.png）显示刘海可见面的
+    # 法线 +Z 分量 >0.55，法线遮罩对它们等于全放行 —— 这批 strand 的法线不能用。
+    # 所以改成位置判据：**y<−0.02（脸前）且 z<1.592（低于颅顶环）的地方不叠环色**，
+    # 颅顶那一圈（z>1.598）与后脑（y>−0.01）照常保留。
+    yf = nt.nodes.new("ShaderNodeMapRange")
+    yf.location = (-420, -700)
+    yf.interpolation_type = 'SMOOTHSTEP'
+    yf.inputs["From Min"].default_value = -0.040
+    yf.inputs["From Max"].default_value = -0.010
+    yf.inputs["To Min"].default_value = 1.0
+    yf.inputs["To Max"].default_value = 0.0
+    yf.clamp = True
+    links.new(sep.outputs["Y"], yf.inputs["Value"])
+
+    zl = nt.nodes.new("ShaderNodeMapRange")
+    zl.location = (-240, -700)
+    zl.interpolation_type = 'SMOOTHSTEP'
+    zl.inputs["From Min"].default_value = 1.584
+    zl.inputs["From Max"].default_value = 1.590
+    zl.inputs["To Min"].default_value = 1.0
+    zl.inputs["To Max"].default_value = 0.0
+    zl.clamp = True
+    links.new(sep.outputs["Z"], zl.inputs["Value"])
+
+    blk = nt.nodes.new("ShaderNodeMath")
+    blk.operation = 'MULTIPLY'
+    blk.location = (-60, -700)
+    links.new(yf.outputs["Result"], blk.inputs[0])
+    links.new(zl.outputs["Result"], blk.inputs[1])
+
+    nmask = nt.nodes.new("ShaderNodeMath")
+    nmask.operation = 'SUBTRACT'
+    nmask.location = (120, -700)
+    nmask.inputs[0].default_value = 1.0
+    links.new(blk.outputs[0], nmask.inputs[1])
+
+    b_bw = nt.nodes.new("ShaderNodeRGBToBW")
+    b_bw.location = (120, -320)
+    links.new(band.outputs["Color"], b_bw.inputs["Color"])
+    fac = nt.nodes.new("ShaderNodeMath")
+    fac.operation = 'MULTIPLY'
+    fac.location = (300, -420)
+    links.new(b_bw.outputs["Val"], fac.inputs[0])
+    links.new(nmask.outputs[0], fac.inputs[1])
 
     add = nt.nodes.new("ShaderNodeMix")
     add.data_type = 'RGBA'
@@ -421,7 +545,7 @@ def hair_material(name="hair",
     add.inputs[7].default_value = _rgb(ring)
     src = em.inputs["Color"].links[0].from_socket
     links.new(src, add.inputs[6])
-    links.new(band.outputs["Color"], add.inputs["Factor"])
+    links.new(fac.outputs[0], add.inputs["Factor"])
     links.new(add.outputs[2], em.inputs["Color"])
     return mat
 

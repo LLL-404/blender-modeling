@@ -351,7 +351,10 @@ def brow(side, mats, bvh):
         t = i / (n - 1)
         x = cx + (-0.024 + 0.050 * t) * s
         z = z0 + 0.0055 * math.sin(math.pi * t) - 0.0070 * t
-        th = 0.0019 + 0.0030 * math.sin(math.pi * (t ** 0.75))
+        # 2026-11-03：眉厚 4.9mm → 3.5mm，外端再收 45%。
+        # 原值在中段达到 4.9mm，配上纯深色材质在浅脸上是一块「楔形厚条」；
+        # 收细并把外端削尖后才有「画出来的眉」的感觉。
+        th = (0.0012 + 0.0023 * math.sin(math.pi * (t ** 0.75))) * (1.0 - 0.45 * t)
         a.append(Vector((x, 0, z)))
         b.append(Vector((x, 0, z + th)))
     ob = band(a, b, f"brow_{s}", mats["brow"])
