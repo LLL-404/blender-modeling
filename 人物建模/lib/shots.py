@@ -31,6 +31,50 @@ RIM_AZIMUTHS = {
     "back_right": (2.2, 2.0),
 }
 
+# ---------------- 机位单源（D15） ----------------
+# m2_head / m3_look / m4_hair / m5_outfit / m5_rig 的相机表都读这里，勿在入口里再写数。
+# skills/blender-procedural-character/scripts/pixel_probe.py 保持自包含不 import，
+# 那边的 VIEWS / ORTHO_BY_STAGE 与本表有**同步义务**（改一处须对另一处）。
+# 数值逐字取自各 m*.py 抽取前现值；face ortho **0.30/0.32 分档系现状，统一与否待作者定**
+# （m2/m3=0.30、m4/m5=0.32；全身各档 ortho 各入口本就一致）。
+# 字段：loc=相机位置；zc=看点 z（看点=(0,0,zc)，m5_pose_samecam 例外见其 target）；
+#       ortho=正交宽；w/h=出图像素。
+VIEWS = {
+    # m2_head（face 特写 600×760）
+    "m2_face_front": dict(loc=(0, -2.0, 1.499), zc=1.4956, ortho=0.30, w=600, h=760),
+    "m2_face_34":    dict(loc=(1.05, -1.72, 1.55), zc=1.4956, ortho=0.30, w=600, h=760),
+    "m2_face_side":  dict(loc=(2.0, 0.0, 1.499), zc=1.4956, ortho=0.30, w=600, h=760),
+    "m2_body":       dict(loc=(0, -3.4, 0.97), zc=0.85, ortho=1.78, w=560, h=900),
+    "m2_body_q34":   dict(loc=(2.3, -2.5, 1.0), zc=0.86, ortho=1.78, w=560, h=900),
+    # m3_look（face 特写 620×780）
+    "m3_face_front": dict(loc=(0, -2.0, 1.4956), zc=1.4956, ortho=0.30, w=620, h=780),
+    "m3_face_q34":   dict(loc=(1.05, -1.72, 1.55), zc=1.4956, ortho=0.30, w=620, h=780),
+    "m3_face_side":  dict(loc=(2.0, 0.0, 1.4956), zc=1.4956, ortho=0.30, w=620, h=780),
+    "m3_upper":      dict(loc=(0, -3.4, 1.10), zc=1.02, ortho=1.02, w=560, h=820),
+    "m3_body_q34":   dict(loc=(2.3, -2.5, 1.0), zc=0.86, ortho=1.78, w=560, h=900),
+    "m3_body_front": dict(loc=(0, -3.4, 0.86), zc=0.86, ortho=1.80, w=560, h=900),
+    # m4_hair（face ortho 收紧到 0.32；back 为 D2 后发束专用机位）
+    "m4_face_front": dict(loc=(0, -2.0, 1.4956), zc=1.4956, ortho=0.32, w=620, h=780),
+    "m4_face_q34":   dict(loc=(1.05, -1.72, 1.55), zc=1.4956, ortho=0.32, w=620, h=780),
+    "m4_face_side":  dict(loc=(2.0, 0.0, 1.4956), zc=1.4956, ortho=0.32, w=620, h=780),
+    "m4_face_back":  dict(loc=(0, 2.2, 1.45), zc=1.40, ortho=0.42, w=620, h=780),
+    "m4_upper":      dict(loc=(0, -3.4, 1.10), zc=1.02, ortho=1.02, w=560, h=820),
+    "m4_body_q34":   dict(loc=(2.3, -2.5, 1.0), zc=0.86, ortho=1.78, w=560, h=900),
+    # m5_outfit
+    "m5_face_front": dict(loc=(0, -2.0, 1.4956), zc=1.4956, ortho=0.32, w=620, h=780),
+    "m5_face_q34":   dict(loc=(1.05, -1.72, 1.55), zc=1.4956, ortho=0.32, w=620, h=780),
+    "m5_body_front": dict(loc=(0, -3.4, 0.86), zc=0.86, ortho=1.80, w=560, h=900),
+    "m5_body_q34":   dict(loc=(2.3, -2.5, 1.0), zc=0.86, ortho=1.80, w=560, h=900),
+    "m5_body_side":  dict(loc=(3.4, 0.0, 0.86), zc=0.86, ortho=1.80, w=560, h=900),
+    # m5_rig 四姿势 + B4 同机位对照（samecam 看点不在中轴：x=0.02，故带 target）
+    "m5_pose_rest":  dict(loc=(2.3, -2.5, 1.0), zc=0.86, ortho=1.85, w=560, h=900),
+    "m5_pose_wave":  dict(loc=(1.2, -3.2, 1.15), zc=1.00, ortho=1.85, w=560, h=900),
+    "m5_pose_walk":  dict(loc=(2.6, -2.2, 1.0), zc=0.86, ortho=1.85, w=560, h=900),
+    "m5_pose_reach": dict(loc=(1.8, -2.9, 1.15), zc=0.98, ortho=1.85, w=560, h=900),
+    "m5_pose_samecam": dict(loc=(2.05, -2.45, 1.10), zc=0.90, target=(0.0, 0.02, 0.90),
+                            ortho=1.85, w=560, h=900),
+}
+
 
 def stage_c_lights(key=None, fill=None, rim=None):
     """把 m3/m4/m5 的三点光统一成 C 阶段参数。返回实际生效的 (key, fill, rim)。"""

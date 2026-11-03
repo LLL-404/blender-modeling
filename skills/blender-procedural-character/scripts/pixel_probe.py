@@ -7,7 +7,8 @@ r"""双模式像素统计探针模板（描边 / 色阶 / ROI 阴影 / 发光带
 
 拷进项目 `_stage?/` 后只需要改三处配置：
   1. `OUT`            —— 产物目录
-  2. `VIEWS`          —— 机位参数，**必须与 m*.py 里的 camera() 调用逐字同步**
+  2. `VIEWS`          —— 机位参数，**与 人物建模/lib/shots.py 的 VIEWS 有同步义务**
+     （单源在那边；face ortho 档位另看下面的 ORTHO_BY_STAGE）
   3. `SKIN_TIERS`     —— toon 皮肤三档的显示色（base × ramp 的 sRGB 编码）
 
 口径提醒（都踩过）：
@@ -39,6 +40,39 @@ VIEWS = {
     "body_front": dict(w=560, h=900, ortho=1.80, zc=0.86, frontal=True),
     "body_q34":   dict(w=560, h=900, ortho=1.78, zc=0.86, frontal=False),
 }
+
+# face 机位 ortho 按阶段分档：m2/m3=0.30、m4/m5=0.32（0.30/0.32 分档系现状，统一与否
+# 待作者定）。输入名带 m<数字> 前缀（view key = 文件名去 .png，如 "m4_face_front"）时，
+# face_* 机位经 view_dict() 自动取该档；无前缀时用 VIEWS 里的字面 ortho。
+# 与 人物建模/lib/shots.py VIEWS 有**同步义务**：那边改档位这里必须跟着改，
+# 否则 px↔世界换算会偏 6.7%（0.32 vs 0.30）。
+ORTHO_BY_STAGE = {"m2": 0.30, "m3": 0.30, "m4": 0.32, "m5": 0.32}
+
+
+def stage_of(name):
+    """从输入名取 m<数字> 阶段前缀（如 "m4_face_front" -> "m4"）；没有则 None。"""
+    if len(name) >= 2 and name[0] == "m" and name[1].isdigit():
+        return name[:2]
+    return None
+
+
+def view_dict(view):
+    """机位表解析：face 机位按 m 前缀选 ortho 档（D15 漂移修复）。
+
+    view key = 输入文件名去 .png。键在 VIEWS 里（拷贝态，如 "m4_face_front"）直接用；
+    不在（模板态）则剥掉 m<数字>_ 前缀回落到基础键。face 机位再按前缀查
+    ORTHO_BY_STAGE 覆写 ortho。
+    """
+    st = stage_of(view)
+    if view in VIEWS:
+        v = dict(VIEWS[view])
+    elif st is not None and view[len(st):len(st) + 1] == "_":
+        v = dict(VIEWS[view[len(st) + 1:]])
+    else:
+        v = dict(VIEWS[view])
+    if st is not None and "face_" in view and st in ORTHO_BY_STAGE:
+        v["ortho"] = ORTHO_BY_STAGE[st]
+    return v
 
 # 皮肤 toon 三档的显示色（sRGB 0~255）。色阶重标定只改 pos/灯强时这三档不变；
 # 若动了 ramp 乘数，这里必须同步，否则分档统计全错。
@@ -140,19 +174,19 @@ def skin_stats(a):
 
 # ---------------------------------------------------------------- ROI（仅正对机位）
 def to_px(view, x, z):
-    v = VIEWS[view]
+    v = view_dict(view)
     s = v["h"] / float(v["ortho"])
     return (v["w"] / 2.0 + x * s, v["h"] / 2.0 - (z - v["zc"]) * s)
 
 
 def px_z(view, py):
-    v = VIEWS[view]
+    v = view_dict(view)
     return v["zc"] + (v["h"] / 2.0 - py) / (v["h"] / float(v["ortho"]))
 
 
 def roi_mask(view, shape, xr, zr):
     h, w = shape[:2]
-    v = VIEWS[view]
+    v = view_dict(view)
     s = v["h"] / float(v["ortho"])
     px0 = int(round(v["w"] / 2.0 + xr[0] * s))
     px1 = int(round(v["w"] / 2.0 + xr[1] * s))

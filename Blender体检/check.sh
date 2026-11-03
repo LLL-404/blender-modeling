@@ -13,6 +13,7 @@ find_blender() {
     return 0
   fi
   local base hit
+  # 默认值与 人物建模/scripts/bpyrun.py 同源，改一处须对另一处。
   for base in "D:/Program Files/Blender Foundation" "C:/Program Files/Blender Foundation"; do
     hit="$(ls -d "$base"/*/blender.exe 2>/dev/null | sort -V | tail -1)"
     if [[ -n "$hit" ]]; then

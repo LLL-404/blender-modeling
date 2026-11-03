@@ -50,28 +50,31 @@ def _set_outline(ortho, res_y):
 
 look.bloom(threshold=0.88, size=8)
 
-shots.set_res(620, 780)
+# 机位单源：数值读 shots.VIEWS（D15），勿在本文件改数。
+v = shots.VIEWS["m4_face_front"]
+shots.set_res(v["w"], v["h"])
 # A6 后头骨中心 1.4956；正视/侧视相机压到完全水平，c_probe 才能精确反投影。
-cams = {
-    "front": shots.camera("c1", (0, -2.0, 1.4956), (0, 0, 1.4956), ortho_scale=0.32),
-    "q34": shots.camera("c2", (1.05, -1.72, 1.55), (0, 0, 1.4956), ortho_scale=0.32),
-    "side": shots.camera("c3", (2.0, 0.0, 1.4956), (0, 0, 1.4956), ortho_scale=0.32),
-    # D2 专用：后发束是沿 x 并排的纵向条，侧面机位（沿 x 看）会把 7 条互相
-    # 遮住，量不到沟壑；必须从背后正对看。ortho 0.42 覆盖后脑 208mm。
-    "back": shots.camera("c6", (0, 2.2, 1.45), (0, 0, 1.40), ortho_scale=0.42),
-}
+# D2 专用 back 机位：后发束是沿 x 并排的纵向条，侧面机位（沿 x 看）会把 7 条互相
+# 遮住，量不到沟壑；必须从背后正对看。ortho 0.42 覆盖后脑 208mm。
+cams = {}
+for name, cid in (("front", "c1"), ("q34", "c2"), ("side", "c3"), ("back", "c6")):
+    v = shots.VIEWS["m4_face_" + name]
+    cams[name] = shots.camera(cid, v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
 for name, cam in cams.items():
-    _set_outline(0.42 if name == "back" else 0.32, 780)
+    v = shots.VIEWS["m4_face_" + name]
+    _set_outline(v["ortho"], v["h"])
     shots.render(cam, f"m4_face_{name}.png")
 
-shots.set_res(560, 820)
-cam = shots.camera("c4", (0, -3.4, 1.10), (0, 0, 1.02), ortho_scale=1.02)
-_set_outline(1.02, 820)
+v = shots.VIEWS["m4_upper"]
+shots.set_res(v["w"], v["h"])
+cam = shots.camera("c4", v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
+_set_outline(v["ortho"], v["h"])
 shots.render(cam, "m4_upper.png")
 
-shots.set_res(560, 900)
-cam = shots.camera("c5", (2.3, -2.5, 1.0), (0, 0, 0.86), ortho_scale=1.78)
-_set_outline(1.78, 900)
+v = shots.VIEWS["m4_body_q34"]
+shots.set_res(v["w"], v["h"])
+cam = shots.camera("c5", v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
+_set_outline(v["ortho"], v["h"])
 shots.render(cam, "m4_body_q34.png")
 
 import sheet

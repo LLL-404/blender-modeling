@@ -71,32 +71,37 @@ def _set_outline(ortho, res_y):
 
 look.bloom(threshold=0.88, size=8)
 
-shots.set_res(620, 780)
+# 机位单源：数值读 shots.VIEWS（D15），勿在本文件改数。
+v = shots.VIEWS["m3_face_front"]
+shots.set_res(v["w"], v["h"])
 # A6 后头骨 z 区间 [1.3712, 1.6200]，中心 1.4956。
-cams = {
-    "front": shots.camera("c1", (0, -2.0, 1.4956), (0, 0, 1.4956), ortho_scale=0.30),
-    "q34": shots.camera("c2", (1.05, -1.72, 1.55), (0, 0, 1.4956), ortho_scale=0.30),
-    "side": shots.camera("c3", (2.0, 0.0, 1.4956), (0, 0, 1.4956), ortho_scale=0.30),
-}
+cams = {}
+for name, cid in (("front", "c1"), ("q34", "c2"), ("side", "c3")):
+    v = shots.VIEWS["m3_face_" + name]
+    cams[name] = shots.camera(cid, v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
 for name, cam in cams.items():
-    _set_outline(0.30, 780)
+    v = shots.VIEWS["m3_face_" + name]
+    _set_outline(v["ortho"], v["h"])
     shots.render(cam, f"m3_face_{name}.png")
 
-shots.set_res(560, 820)
-cam = shots.camera("c4", (0, -3.4, 1.10), (0, 0, 1.02), ortho_scale=1.02)
-_set_outline(1.02, 820)
+v = shots.VIEWS["m3_upper"]
+shots.set_res(v["w"], v["h"])
+cam = shots.camera("c4", v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
+_set_outline(v["ortho"], v["h"])
 shots.render(cam, "m3_upper.png")
 
-shots.set_res(560, 900)
-cam = shots.camera("c5", (2.3, -2.5, 1.0), (0, 0, 0.86), ortho_scale=1.78)
-_set_outline(1.78, 900)
+v = shots.VIEWS["m3_body_q34"]
+shots.set_res(v["w"], v["h"])
+cam = shots.camera("c5", v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
+_set_outline(v["ortho"], v["h"])
 shots.render(cam, "m3_body_q34.png")
 
 # 正对全身机位：手/前臂 ROI 需要「镜头沿 +Y」才能精确反投影到世界坐标。
 # 参数与 m5_body_front 一致（560×900 / ortho 1.80 / 中心 z 0.86），这样
 # C2 的手部判据可以只在 m3 这一路入口上验证，不必去动 m5_outfit.py。
-cam = shots.camera("c6", (0, -3.4, 0.86), (0, 0, 0.86), ortho_scale=1.80)
-_set_outline(1.80, 900)
+v = shots.VIEWS["m3_body_front"]
+cam = shots.camera("c6", v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
+_set_outline(v["ortho"], v["h"])
 shots.render(cam, "m3_body_front.png")
 
 import sheet

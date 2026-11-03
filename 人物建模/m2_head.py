@@ -31,20 +31,23 @@ sc.render.film_transparent = False
 
 # 头部特写。A6 后头骨的 z 区间是 [1.3712, 1.6200]（中心 1.4956），
 # 相机目标从原来的 1.502 下移到 1.4956，否则脸会偏出画面下缘。
-shots.set_res(600, 760)
-cams = {
-    "face_front": shots.camera("c1", (0, -2.0, 1.499), (0, 0, 1.4956), ortho_scale=0.30),
-    "face_34": shots.camera("c2", (1.05, -1.72, 1.55), (0, 0, 1.4956), ortho_scale=0.30),
-    "face_side": shots.camera("c3", (2.0, 0.0, 1.499), (0, 0, 1.4956), ortho_scale=0.30),
-}
+# 机位单源：数值读 shots.VIEWS（D15），勿在本文件改数。
+v = shots.VIEWS["m2_face_front"]
+shots.set_res(v["w"], v["h"])
+cams = {}
+for name, cid in (("face_front", "c1"), ("face_34", "c2"), ("face_side", "c3")):
+    v = shots.VIEWS["m2_" + name]
+    cams[name] = shots.camera(cid, v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
 for name, cam in cams.items():
     shots.render(cam, f"m2_{name}.png")
 
 # 全身
-shots.set_res(560, 900)
-cam = shots.camera("c4", (0, -3.4, 0.97), (0, 0, 0.85), ortho_scale=1.78)
+v = shots.VIEWS["m2_body"]
+shots.set_res(v["w"], v["h"])
+cam = shots.camera("c4", v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
 shots.render(cam, "m2_body.png")
-cam2 = shots.camera("c5", (2.3, -2.5, 1.0), (0, 0, 0.86), ortho_scale=1.78)
+v = shots.VIEWS["m2_body_q34"]
+cam2 = shots.camera("c5", v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
 shots.render(cam2, "m2_body_q34.png")
 
 import sheet

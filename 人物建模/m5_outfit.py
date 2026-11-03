@@ -51,18 +51,22 @@ def _set_outline(ortho, res_y):
 
 look.bloom(threshold=0.88, size=8)
 
-shots.set_res(620, 780)
+# 机位单源：数值读 shots.VIEWS（D15），勿在本文件改数。
+v = shots.VIEWS["m5_face_front"]
+shots.set_res(v["w"], v["h"])
 # A6 后头骨中心 1.4956；正视相机压到完全水平（c_probe 反投影要用）。
-for name, loc in (("front", (0, -2.0, 1.4956)), ("q34", (1.05, -1.72, 1.55))):
-    cam = shots.camera("c" + name, loc, (0, 0, 1.4956), ortho_scale=0.32)
-    _set_outline(0.32, 780)
+for name in ("front", "q34"):
+    v = shots.VIEWS["m5_face_" + name]
+    cam = shots.camera("c" + name, v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
+    _set_outline(v["ortho"], v["h"])
     shots.render(cam, f"m5_face_{name}.png")
 
-shots.set_res(560, 900)
-for name, loc in (("front", (0, -3.4, 0.86)), ("q34", (2.3, -2.5, 1.0)),
-                  ("side", (3.4, 0.0, 0.86))):
-    cam = shots.camera("b" + name, loc, (0, 0, 0.86), ortho_scale=1.80)
-    _set_outline(1.80, 900)
+v = shots.VIEWS["m5_body_front"]
+shots.set_res(v["w"], v["h"])
+for name in ("front", "q34", "side"):
+    v = shots.VIEWS["m5_body_" + name]
+    cam = shots.camera("b" + name, v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
+    _set_outline(v["ortho"], v["h"])
     shots.render(cam, f"m5_body_{name}.png")
 
 import sheet

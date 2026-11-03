@@ -74,18 +74,15 @@ print("[rig] bones", len(arm.data.bones))
 
 look.bloom(threshold=0.88, size=8)
 
-shots.set_res(560, 900)
-views = {
-    "rest": ((2.3, -2.5, 1.0), (0, 0, 0.86)),
-    "wave": ((1.2, -3.2, 1.15), (0, 0, 1.00)),
-    "walk": ((2.6, -2.2, 1.0), (0, 0, 0.86)),
-    "reach": ((1.8, -2.9, 1.15), (0, 0, 0.98)),
-}
+# 机位单源：数值读 shots.VIEWS（D15），勿在本文件改数。
+v = shots.VIEWS["m5_pose_rest"]
+shots.set_res(v["w"], v["h"])
 paths = []
-for name, (loc, target) in views.items():
+for name in ("rest", "wave", "walk", "reach"):
+    v = shots.VIEWS["m5_pose_" + name]
     rig.apply_pose(arm, name)
-    cam = shots.camera("cam_" + name, loc, target, ortho_scale=1.85)
-    _set_outline(1.85, 900)
+    cam = shots.camera("cam_" + name, v["loc"], (0, 0, v["zc"]), ortho_scale=v["ortho"])
+    _set_outline(v["ortho"], v["h"])
     paths.append(shots.render(cam, f"m5_pose_{name}.png"))
 
 import sheet
@@ -162,8 +159,9 @@ for pose in ("wave", "walk", "reach"):
 #    机位取**正面**而不是 rest 的 3/4 视角：rest 机位在右前方，wave 抬起的是左手，
 #    会被躯干挡在后侧 —— 实测 rest 机位下 rest-vs-wave 只有 4.47%（与独立复核的
 #    4.24% 吻合），那不是姿势差小，是机位看不见。正面机位能同时看到矢状面两侧动作。
-cam_same = shots.camera("cam_same", (2.05, -2.45, 1.10), (0.0, 0.02, 0.90), ortho_scale=1.85)
-_set_outline(1.85, 900)
+v = shots.VIEWS["m5_pose_samecam"]
+cam_same = shots.camera("cam_same", v["loc"], v["target"], ortho_scale=v["ortho"])
+_set_outline(v["ortho"], v["h"])
 same_paths = {}
 for name in ("rest", "wave", "walk", "reach"):
     rig.apply_pose(arm, name)
