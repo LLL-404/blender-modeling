@@ -4,8 +4,9 @@ from mathutils import Vector
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import preview_common as pc  # noqa: E402  D1-D6 共享层（blender-rig 三脚本同源）
 
-OUT = r"D:\G\github\实用工具\Blender建模\blender-rig\out"
-IMG = r"D:\G\github\实用工具\Blender建模\blender-rig\preview"
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.join(HERE, "out")
+IMG = os.path.join(HERE, "preview")
 os.makedirs(IMG, exist_ok=True)
 
 

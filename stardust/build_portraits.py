@@ -22,7 +22,8 @@ import math
 import os
 import sys
 
-RAW_DIR = r"D:\G\game\games\stardust\tools\portrait\raw"
+GAME = os.environ.get("STARDUST_DIR", r"D:\G\game\games\stardust")
+RAW_DIR = os.path.join(GAME, "tools", "portrait", "raw")
 os.makedirs(RAW_DIR, exist_ok=True)
 
 RES_X, RES_Y = 768, 1152

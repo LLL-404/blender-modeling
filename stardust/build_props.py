@@ -10,8 +10,9 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import build_portraits as bp  # noqa: E402  （D5/D6 渲染助手复用 bp 轴；导入即建 RAW_DIR 契约目录）
 
-BLEND_PATH = r"D:\G\game\games\stardust\tools\blender\stardust_props.blend"
-OUT_DIR = r"D:\G\game\games\stardust\tools\blender\render_src"
+GAME = os.environ.get("STARDUST_DIR", r"D:\G\game\games\stardust")
+BLEND_PATH = os.path.join(GAME, "tools", "blender", "stardust_props.blend")
+OUT_DIR = os.path.join(GAME, "tools", "blender", "render_src")
 os.makedirs(OUT_DIR, exist_ok=True)
 EL = 35.0  # 相机仰角（度）
 RES_X = 2048

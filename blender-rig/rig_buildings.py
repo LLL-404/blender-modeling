@@ -4,8 +4,12 @@ from mathutils import Vector
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import preview_common as pc  # noqa: E402  D1/D3 共享层（blender-rig 三脚本同源）
 
-SRC = r"D:\G\game\games\reroute-godot\assets\models"
-OUT = r"D:\G\github\实用工具\Blender建模\blender-rig\out"
+HERE = os.path.dirname(os.path.abspath(__file__))
+# 外部输入目录：默认指本机游戏工程（与 stardust/AGENTS.md 的绝对路径契约一致），
+# 换机器或用别人的工程时设环境变量 REROUTE_GAME_DIR 覆盖即可，不必改代码。
+SRC = os.path.join(os.environ.get("REROUTE_GAME_DIR", r"D:\G\game\games\reroute-godot"),
+                   "assets", "models")
+OUT = os.path.join(HERE, "out")
 os.makedirs(OUT, exist_ok=True)
 
 FPS = 30

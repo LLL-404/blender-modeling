@@ -6,7 +6,8 @@
 import bpy
 import os
 
-OUT_DIR = r"D:\G\game\games\stardust\assets\models"
+GAME = os.environ.get("STARDUST_DIR", r"D:\G\game\games\stardust")
+OUT_DIR = os.path.join(GAME, "assets", "models")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # 道具 -> 本体对象名前缀（与 build_props.py 命名对齐；Shadow_*/scorch 一律不导）

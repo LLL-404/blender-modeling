@@ -24,7 +24,10 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import build_portraits as bp  # noqa: E402
 
-OUT_DIR = r"D:\G\game\games\stardust\tools\blender\render_body"
+# 外部游戏工程根：默认指本机（与 stardust/AGENTS.md 契约一致），
+# 换机器设 STARDUST_DIR 覆盖，不必改代码。
+GAME = os.environ.get("STARDUST_DIR", r"D:\G\game\games\stardust")
+OUT_DIR = os.path.join(GAME, "tools", "blender", "render_body")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 RES_X, RES_Y = 256, 384

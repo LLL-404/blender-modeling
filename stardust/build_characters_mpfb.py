@@ -28,8 +28,9 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import build_portraits as bp  # noqa: E402
 
-BASE_OBJ = r"D:\G\game\games\stardust\tools\blender\mpfb\human.obj"
-OUT_DIR = r"D:\G\game\games\stardust\tools\blender\render_body"
+GAME = os.environ.get("STARDUST_DIR", r"D:\G\game\games\stardust")
+BASE_OBJ = os.path.join(GAME, "tools", "blender", "mpfb", "human.obj")
+OUT_DIR = os.path.join(GAME, "tools", "blender", "render_body")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 RES_X, RES_Y = 256, 384

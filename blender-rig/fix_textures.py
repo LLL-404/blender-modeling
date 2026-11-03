@@ -1,6 +1,6 @@
 import json, struct, os, sys
 
-OUT = r"D:\G\github\实用工具\Blender建模\blender-rig\out"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
 
 def fix(path):
