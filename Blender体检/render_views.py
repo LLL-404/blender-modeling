@@ -24,6 +24,7 @@ import json
 import math
 import time
 import traceback
+import fnmatch
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -82,6 +83,7 @@ def parse_args():
         "res": 512,
         "out": "",
         "sheet": True,
+        "ignore": "",
     }
     i = 0
     while i < len(args):
@@ -96,6 +98,8 @@ def parse_args():
             opts["res"] = int(args[i + 1]); i += 2
         elif a == "--out":
             opts["out"] = args[i + 1]; i += 2
+        elif a == "--ignore":
+            opts["ignore"] = args[i + 1]; i += 2
         elif a == "--no-sheet":
             opts["sheet"] = False; i += 1
         else:
@@ -198,12 +202,41 @@ def setup_lighting(scene):
         so.rotation_euler = rot
 
 
-def scene_bounds(scene):
+def _patterns(raw):
+    return [p.strip() for p in (raw or "").split(",") if p.strip()]
+
+
+def _ignored(name, patterns):
+    return any(fnmatch.fnmatchcase(name, pat) for pat in patterns)
+
+
+def apply_ignore(scene, raw):
+    """按逗号分隔的 glob 隐藏辅助对象（如 floor*），并从取景包围盒排除。
+
+    只改运行中的场景，不保存 .blend；返回被命中的对象名。
+    """
+    patterns = _patterns(raw)
+    hit = []
+    if not patterns:
+        return hit
+    for ob in scene.objects:
+        if _ignored(ob.name, patterns):
+            ob.hide_render = True
+            hit.append(ob.name)
+    if hit:
+        print("[blender体检] ignore: " + ", ".join(sorted(hit)), file=sys.stderr)
+    return sorted(hit)
+
+
+def scene_bounds(scene, ignore_raw=""):
     """可见几何对象的包围盒：返回 (center Vector, size Vector, 半径 float)。"""
     dg = bpy.context.evaluated_depsgraph_get()
+    patterns = _patterns(ignore_raw)
     pts = []
     for ob in scene.objects:
         if ob.type not in {"MESH", "CURVE", "SURFACE", "META", "FONT", "VOLUME"}:
+            continue
+        if _ignored(ob.name, patterns):
             continue
         try:
             if not ob.visible_get():
@@ -216,6 +249,8 @@ def scene_bounds(scene):
     if not pts:  # 兜底：不筛可见性
         for ob in scene.objects:
             if ob.type in {"MESH", "CURVE", "SURFACE", "META", "FONT", "VOLUME"}:
+                if _ignored(ob.name, patterns):
+                    continue
                 for c in ob.bound_box:
                     pts.append(ob.matrix_world @ Vector(c))
     if not pts:
@@ -315,7 +350,8 @@ def main():
     eid = pick_engine(opts["engine"])
     tune_engine(scene, eid)
     setup_lighting(scene)
-    center, size, radius = scene_bounds(scene)
+    ignored = apply_ignore(scene, opts["ignore"])
+    center, size, radius = scene_bounds(scene, opts["ignore"])
 
     roots = [tool_dir()]
     model_path = bpy.data.filepath
@@ -353,6 +389,7 @@ def main():
         "views": opts["views"],
         "elevation_deg": opts["elevation"],
         "resolution": opts["res"],
+        "ignored": ignored,
         "out_dir": out_dir,
         "camera_distance": round(cam_dist, 4),
         "bbox_center": [round(v, 4) for v in center],

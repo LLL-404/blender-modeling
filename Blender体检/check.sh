@@ -2,6 +2,7 @@
 # Blender体检 · 驱动脚本：一条命令渲 16 视角 + 顶视 + 拼版 + manifest
 # 用法: bash check.sh <model.blend> [--views 16] [--elevation 20] [--engine eevee]
 #                     [--res 512] [--out <目录>] [--factory] [--no-sheet]
+#                     [--ignore "floor*,ground*"]   # 逗号分隔 glob，隐藏辅助对象并排除出取景
 # 环境变量 BLENDER_EXE 可指定 blender.exe 绝对路径；默认自动探测。
 set -euo pipefail
 
@@ -47,6 +48,7 @@ res=512
 out=""
 factory=0
 sheet=1
+ignore=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --views) views="$2"; shift 2 ;;
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --engine) engine="$2"; shift 2 ;;
     --res) res="$2"; shift 2 ;;
     --out) out="$2"; shift 2 ;;
+    --ignore) ignore="$2"; shift 2 ;;
     --factory) factory=1; shift ;;
     --no-sheet) sheet=0; shift ;;
     *) echo "未知参数: $1" >&2; exit 1 ;;
@@ -73,6 +76,7 @@ MTIME_BEFORE="$(stat -c %Y "$MODEL")"
 extra=()
 [[ $factory == 1 ]] && extra+=(--factory-startup)
 pyargs=(--views "$views" --elevation "$elevation" --engine "$engine" --res "$res" --out "$out")
+[[ -n "$ignore" ]] && pyargs+=(--ignore "$ignore")
 [[ $sheet == 0 ]] && pyargs+=(--no-sheet)
 
 echo "[blender体检] $BLENDER"
