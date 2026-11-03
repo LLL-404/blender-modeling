@@ -55,13 +55,7 @@ VIEWS = [("down", 0), ("up", 180), ("left", 90), ("right", -90)]
 def scene_setup():
     bp.reset()
     sc = bpy.context.scene
-    sc.render.resolution_x = RES_X
-    sc.render.resolution_y = RES_Y
-    sc.render.image_settings.color_mode = "RGBA"
-    try:
-        sc.eevee.taa_render_samples = SAMPLES
-    except Exception:
-        pass
+    bp.render_output((RES_X, RES_Y), samples=SAMPLES)   # D6：输出设置单源（bp 轴）
     cam_data = bpy.data.cameras.new("Cam")
     cam_data.type = "ORTHO"
     cam_data.ortho_scale = ORTHO
@@ -79,11 +73,7 @@ def set_view(cam, yaw_deg):
     r = 6.0
     cam.location = (math.sin(yaw) * r, -math.cos(yaw) * r, CAM_Z)
     cam.rotation_euler = (math.radians(90), 0, yaw)
-    for name, energy, ang, pitch, rel in (
-        ("Key", 1.55, 18, 58, -32),
-        ("Fill", 0.75, 50, 72, 46),
-        ("Rim", 0.9, 12, 118, 168),
-    ):
+    for name, energy, ang, pitch, rel in bp.LIGHT_SPECS:   # D11：灯表单源（bp 轴）
         o = bpy.data.objects.get(name)
         if o is None:
             d = bpy.data.lights.new(name, "SUN")
@@ -260,8 +250,7 @@ def render_all(pid):
     bp.apply_outlines(thickness=0.030, min_size=0.12)
     for view, yaw in VIEWS:
         set_view(cam, yaw)
-        bpy.context.scene.render.filepath = os.path.join(OUT_DIR, "%s_%s.png" % (pid, view))
-        bpy.ops.render.render(write_still=True)
+        bp.render_still(os.path.join(OUT_DIR, "%s_%s.png" % (pid, view)))   # D5：落盘单源
         print("[body]", pid, view, "yaw", yaw)
 
 

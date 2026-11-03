@@ -5,6 +5,10 @@
 import bpy
 import math
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import build_portraits as bp  # noqa: E402  （D5/D6 渲染助手复用 bp 轴；导入即建 RAW_DIR 契约目录）
 
 BLEND_PATH = r"D:\G\game\games\stardust\tools\blender\stardust_props.blend"
 OUT_DIR = r"D:\G\game\games\stardust\tools\blender\render_src"
@@ -38,14 +42,7 @@ def reset():
         except Exception:
             continue
     sc.render.film_transparent = True
-    sc.render.resolution_x = RES_X
-    sc.render.resolution_y = 512
-    sc.render.image_settings.file_format = "PNG"
-    sc.render.image_settings.color_mode = "RGBA"
-    try:
-        sc.eevee.taa_render_samples = 32
-    except Exception:
-        pass
+    bp.render_output((RES_X, 512), samples=32)   # D6：输出设置单源（res_y 默认 512 系现状）
     sc.view_settings.view_transform = "Standard"  # AgX 会去饱和，像素风要 Standard
     sc.view_settings.look = "None"
     print("[view]", sc.view_settings.view_transform)
@@ -279,8 +276,7 @@ def world_bbox(objs):
 def render_to(name, res_y):
     sc = bpy.context.scene
     sc.render.resolution_y = res_y
-    sc.render.filepath = os.path.join(OUT_DIR, name + ".png")
-    bpy.ops.render.render(write_still=True)
+    bp.render_still(os.path.join(OUT_DIR, name + ".png"))   # D5：落盘单源（bp 轴）
     print("[rendered]", name)
 
 

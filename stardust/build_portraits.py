@@ -117,6 +117,35 @@ C_EYE = hexc("2a2030")
 _MAT_CACHE = {}
 
 
+# ---------------- 渲染输出/落盘助手（D6/D5 单源，2026-11-03） ----------------
+# build_characters.py / build_characters_mpfb.py / build_props.py 的输出设置块
+# 与落盘三行都转调这里；本文件是 stardust 侧的复用轴。
+def render_output(res, samples=None):
+    """渲染输出设置：分辨率/百分比/格式/色彩模式/采样。res=(w, h)。返回 Scene。
+
+    samples=None 时不动 taa_render_samples。
+    """
+    sc = bpy.context.scene
+    sc.render.resolution_x, sc.render.resolution_y = res
+    sc.render.resolution_percentage = 100
+    sc.render.image_settings.file_format = "PNG"
+    sc.render.image_settings.color_mode = "RGBA"
+    if samples is not None:
+        try:
+            sc.eevee.taa_render_samples = samples
+        except Exception:
+            pass
+    return sc
+
+
+def render_still(filepath):
+    """渲染落盘（filepath + write_still），返回写入路径。"""
+    sc = bpy.context.scene
+    sc.render.filepath = filepath
+    bpy.ops.render.render(write_still=True)
+    return filepath
+
+
 def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     _MAT_CACHE.clear()
@@ -129,15 +158,7 @@ def reset():
         except Exception:
             continue
     sc.render.film_transparent = True
-    sc.render.resolution_x = RES_X
-    sc.render.resolution_y = RES_Y
-    sc.render.resolution_percentage = 100
-    sc.render.image_settings.file_format = "PNG"
-    sc.render.image_settings.color_mode = "RGBA"
-    try:
-        sc.eevee.taa_render_samples = SAMPLES
-    except Exception:
-        pass
+    render_output((RES_X, RES_Y), samples=SAMPLES)   # D6：输出设置单源
     sc.view_settings.view_transform = "Standard"
     sc.view_settings.look = "None"
     sc.view_settings.exposure = 0.0
@@ -252,17 +273,23 @@ def backdrop():
     return o
 
 
+# ---------------- 三点太阳灯表（D11 单源，2026-11-03） ----------------
+# build_characters.py / build_characters_mpfb.py 的 set_view() 转抄此表，勿再各写一份。
+# (name, energy, angle_deg, pitch_deg, rel_deg)——pitch/rel 为绕 x / 绕 z 的欧拉角（度）。
+LIGHT_SPECS = (
+    ("Key", 1.55, 18, 58, -32),
+    ("Fill", 0.75, 50, 72, 46),
+    ("Rim", 0.9, 12, 118, 168),
+)
+
+
 def lights():
-    for name, energy, ang, rot in (
-        ("Key", 1.55, 18, (58, 0, -32)),
-        ("Fill", 0.75, 50, (72, 0, 46)),
-        ("Rim", 0.9, 12, (118, 0, 168)),
-    ):
+    for name, energy, ang, pitch, rel in LIGHT_SPECS:
         d = bpy.data.lights.new(name, "SUN")
         d.energy = energy
         d.angle = math.radians(ang)
         o = bpy.data.objects.new(name, d)
-        o.rotation_euler = tuple(math.radians(v) for v in rot)
+        o.rotation_euler = (math.radians(pitch), 0, math.radians(rel))
         bpy.context.collection.objects.link(o)
 
 
@@ -459,10 +486,8 @@ def render(pid, expr):
     build(pid, expr)
     apply_outlines(thickness=0.010, min_size=0.06)
     suffix = "" if expr == "normal" else "_" + expr
-    sc = bpy.context.scene
-    sc.render.filepath = os.path.join(RAW_DIR, "%s%s.png" % (pid, suffix))
-    bpy.ops.render.render(write_still=True)
-    print("[render]", pid, expr, "->", sc.render.filepath)
+    path = render_still(os.path.join(RAW_DIR, "%s%s.png" % (pid, suffix)))   # D5：落盘单源
+    print("[render]", pid, expr, "->", path)
 
 
 if __name__ == "__main__":
