@@ -1,7 +1,8 @@
 # BlenderAPI
 
-headless Blender 5.2 的**程序化建模封装层**：`bapi/` 7 个子模块 + `catalog/`（机器扫描的 API 目录）+
-`selftest.py`（逐项实测）。2026-11-03 新增，`bapi.__version__ = "0.1.0"`（`bapi/__init__.py:37`）。
+headless Blender 5.2 的**程序化建模封装层**：`bapi/` 7 个子模块 + `catalog/`（机器扫描的 API 目录，
+含修改器参数表与节点端口表）+ `selftest.py`（逐项实测）。2026-11-03 新增，`bapi.__version__ = "0.1.0"`
+（`bapi/__init__.py:37`）。
 
 **一句话**：把 `-b` 下能用、该用、坑在哪，封成一组「参数写错会响、返回值可断言」的函数；
 并给出一份能自证可用的自测和一份反映本机真实安装的 API 目录。
@@ -16,7 +17,8 @@ headless Blender 5.2 的**程序化建模封装层**：`bapi/` 7 个子模块 + 
 | 自带可用性证据：`selftest.py` 36 项逐条打印 PASS/FAIL/SKIP + 实测数字；`catalog/` 是扫描产物不是手抄 | **不承诺跨 Blender 版本稳定**：只在 5.2.2 LTS 上实测过（见「已知边界」第 1 条） |
 
 规模（2026-11-03 实测）：`bapi/` 8 个 `.py` 共 **1,621 行**（`__init__` 60 / `env` 92 / `obj` 138 /
-`mesh` 264 / `mod` 220 / `mat` 311 / `shot` 260 / `sculpt` 276）；`gen_catalog.py` 315 行；
+`mesh` 264 / `mod` 220 / `mat` 311 / `shot` 260 / `sculpt` 276）；`gen_catalog.py` **866 行**
+（15:18 版 315 行 → 19:52 版 866 行，新增修改器参数、节点端口、OCIO 色彩管理三段扫描）；
 `selftest.py` 634 行、36 个自测项。
 
 ## 环境要求
@@ -163,26 +165,54 @@ print(bapi.info())
 | 项 | 值 |
 |---|---|
 | 来源 | `gen_catalog.py` 在运行中的 Blender 内扫描生成，**不是手抄文档**（`gen_catalog.py:1-16`） |
-| 生成时间 | **2026-11-03T15:18:36**（`catalog/index.md`） |
+| 生成时间 | **2026-11-03T19:52:21**（`catalog/index.md`） |
 | Blender | **5.2.2 LTS**，binary `D:\Program Files\Blender Foundation\Blender 5.2\blender.exe`，`factory_startup=True` |
-| 产物 | `catalog/` 共 9 个文件：`index.md` + 7 个分域 md + `api.json`（392,771 B） |
-| 覆盖统计 | 修改器类型 83 / bmesh 算子 83 / 节点类型 562 / 操作符 1129（`catalog/index.md`） |
-| 分域 | `01_env` 引擎/色彩/EEVEE 旋钮、`02_types` 核心类型属性表、`03_modifiers` 修改器+约束枚举、`04_bmesh` 算子签名、`05_nodes` 节点清单、`06_ops` 操作符（sculpt/view3d 标 ⚠）、`07_gltf` 导出参数 |
-| 重生成命令 | `blender -b --factory-startup --python "D:\G\github\实用工具\Blender建模\BlenderAPI\gen_catalog.py"`（**本轮未重跑**，保留 15:18 生成时点作证据） |
+| 产物 | `catalog/` 共 9 个文件：`index.md` + 7 个分域 md + `api.json`（781,564 B） |
+| 覆盖统计 | 修改器 **83 类 / 1219 条参数**；节点 **540 个可实例化 / 2526 个 socket**（另 22 个不可实例化）；bmesh 算子 83；操作符 1129；核心类型 24 类 |
+| 分域 | `01_env` 引擎/色彩（**view_transform + look 按 view_transform 分组**）/EEVEE 旋钮、`02_types` 核心类型属性表、`03_modifiers` 枚举 **+ 每类参数表**、`04_bmesh` 算子签名、`05_nodes` 清单 **+ 每节点端口表**、`06_ops` 操作符（sculpt/view3d 标 ⚠）、`07_gltf` 导出参数 |
+| 重生成命令 | `blender -b --factory-startup --python "D:\G\github\实用工具\Blender建模\BlenderAPI\gen_catalog.py"`（约 40 s，2026-11-03 19:52 重跑过） |
 
-**口径警告（原文在 `catalog/index.md:29-30`）**：
+**怎么读这份目录**：`03_modifiers.md` 查修改器参数名，`05_nodes.md` 查节点端口名，`api.json` 查结构化全量（含默认值/枚举/范围）。名单类信息（`06_ops` / `04_bmesh`）只证明「存在」。
 
-> **目录只证明「存在」，不证明「能用」。** 无头可用性见 `../bapi/` 的封装与 `../selftest.py` 的实测。
+**口径**（原文在 `catalog/index.md`）：
 
-具体到本目录还有三个使用陷阱，已实测：
+> **目录只证明「存在」，不证明「能被 headless 调用」。** 参数与端口是从真实实例上读的
+> （试建 → 读 RNA → 删除），比名单可信；但 `bpy.ops` 的 poll 结果仍要看 `bapi/` 与 `selftest.py`。
 
-1. **动态枚举取不到真实取值**：`01_env.md` 的 `view_transform` / `look` 段只列出 `NONE`，这是静态 RNA
-   `enum_items` 的限制；运行时实际值是 `AgX`，并且 `env.color_standard()` 设 `'Standard'` 能生效
-   （selftest `env · reset/engine/eevee/colormanage` 断言通过）。要查真实可选值请在 Blender 里打印。
-2. **ops 清单 ≠ headless 可用清单**：`06_ops.md` 给 `sculpt`/`view3d` 标了 ⚠（`gen_catalog.py:284`），
-   但其余命名空间里同样可能有 poll 失败的操作符；bapi 的取舍是「只在没有数据层替代的 4 个入口用 ops」。
-3. **目录绑定这一次安装**：换 Blender 版本、装扩展（如 Cycles 以 addon 形式注册引擎）后必须重扫，
-   否则会拿旧枚举当可用值。
+具体到本目录有六个使用陷阱，全部实测过：
+
+1. **`view_transform` / `look` 的 RNA 枚举是假的**：`bl_rna.properties[...].enum_items` 只返回一条占位
+   `NONE`，而实际当前值是 `AgX`。**已解决**：`01_env.md` 改从 OCIO 的 `displays:` 段读，再逐个写回验证，
+   现在给出 9 个真实 view_transform。**别再照 `enum_items` 判断可用值。**
+2. **`look` 的可用性由 `view_transform` 决定**：OCIO 里共 27 个 look，但 `AgX` 下只有 `AgX - *` 那 9 个能写；
+   切到 `Filmic` / `Standard` / `Raw` 只剩 Filmic 那 7 个。写错直接 `TypeError`。`01_env.md` 已按
+   view_transform 分组列出。
+3. **修改器的参数不在 `bpy.ops` 里**：`bpy.ops.modifier` 命名空间在 5.2 实测 **0 条**。加修改器一律
+   `ob.modifiers.new(name, 'SOLIDIFY')` 再赋属性，属性名查 `03_modifiers.md`。
+4. **节点端口名带空格**：Principled BSDF 的是 `inputs["Base Color"]`，不是 `inputs["base_color"]`。
+   `05_nodes.md` 的端口表就是按真实名字写的，照抄即可。
+5. **`nodes.new()` 有 22 个类型会报 `Node type … undefined`**：它们是基类（`ShaderNode`）、
+   `node_tree` 类型（`ShaderNodeTree`）和 `CustomGroup`，本来就没有实例，不是扫描失败。
+   清单列在 `05_nodes.md` 的「不可实例化」一节。
+6. **ops 清单 ≠ headless 可用清单**：`06_ops.md` 给 `sculpt`/`view3d` 标了 ⚠，但其余命名空间里同样可能有
+   poll 失败的操作符；bapi 的取舍是「只在没有数据层替代的 4 个入口用 ops」。
+
+另外：**目录绑定这一次安装**。换 Blender 版本、装扩展（如 Cycles 以 addon 形式注册引擎）后必须重扫，
+否则会拿旧枚举当可用值。
+
+### 扫描器实现要点（改 `gen_catalog.py` 前必读）
+
+修改器参数与节点端口都**挂在实例上**，不在类型上（`Modifier` 基类只有 13 条通用属性），所以扫描方式是
+「试建 → 读 RNA → 删除」：
+
+| 扫描对象 | 必须造什么才能读全 | 覆盖结果 |
+|---|---|---|
+| 修改器 | 4 种宿主：`mesh` / `curve` / `grease_pencil` / `volume`（`MESH_TO_VOLUME`、`VOLUME_DISPLACE` 只在 volume 上能建） | 83/83，0 失败 |
+| 节点 | 4 种 tree：shader / geometry / **compositor（`node_groups.new(..., 'CompositorNodeTree')`）** / texture | 540/562，另 22 个不可实例化 |
+| 色彩管理 | OCIO `config.ocio` 的 `displays:` / `looks:` 段 + 逐值写回验证 | view 9 个 / look 27 个 |
+
+> **CRLF 坑**：OCIO 配置是 CRLF。必须用 `splitlines()` 或 text mode 读，`split('\n')` 会留下行尾 `\r`，
+> 让 `re.match(..., '$')` 匹配不上（Windows 的 text mode 会自动转换所以侥幸不报错，**Linux 上必踩**）。
 
 ## 已知边界（诚实清单）
 
@@ -248,6 +278,7 @@ Get-ChildItem -Recurse -File -Filter *.py |
 | 改 `bapi/` 任何一个模块后 | 必须复跑 selftest（命令见上），确认 `PASS=36 FAIL=0 SKIP=0`、退出码 0，再更新 `out/selftest.log` |
 | selftest 报 FAIL | **先判归因**：是封装 bug 还是判据写错（本轮 6 条里 1 条真 bug、5 条判据错）。修判据要给出实测依据，禁止把阈值放宽到「必然通过」 |
 | 换 Blender 版本 / 装扩展后 | 先 `blender … --python gen_catalog.py` 重扫 catalog，再跑 selftest；旧 catalog 的枚举可能已失效 |
+| 改 `catalog/` 的扫描逻辑后 | 跑 `python verify_catalog.py` 做独立核对（48 项判据：产物齐全、未改分域逐字节不变、SOLIDIFY/Principled 数值、view/look 分组、md 反引号配对）。**不要只看「生成成功」**。回归对比需要 `catalog_bak/` 基线，没有就跳过那 7 项 |
 | 新增封装函数 | 同时加自测项（每项都要打印可测数值），并更新本 README 的模块函数表 |
 | 文档口径 | 「4 处 ops」与 `bapi/__init__.py:8-9`、`bapi/env.py:4-7` 两处 docstring 保持同步（2026-11-03 已从「三处」校正为「四处」并点名 `shot.save_blend()`） |
 
@@ -258,3 +289,4 @@ Get-ChildItem -Recurse -File -Filter *.py |
 | 2026-11-03 | `bapi 0.1.0` 建立；catalog 扫描（15:18）；selftest 首跑 30 PASS / 6 FAIL / 0 SKIP（exit 1） |
 | 2026-11-03 | 修 `shot.setup()` 的 `view_settings` 真 bug；按实测依据修正 5 条 selftest 判据；复跑 **36 PASS / 0 FAIL / 0 SKIP（exit 0，3.23 s）** |
 | 2026-11-03 | 补本 README；校正两处 docstring 的 ops 数量口径（三→四）；未重生成 catalog |
+| 2026-11-03 | **catalog 补全**（`gen_catalog.py` 315 → 866 行）：新增修改器参数扫描（83 类 / 1219 条）、节点端口扫描（540 个 / 2526 socket）、色彩管理改从 OCIO 读（view_transform 9 个、look 27 个按 view_transform 分组）。`api.json` 392,771 → 781,564 B；`03_modifiers.md` 1.6K → 71.7K；`05_nodes.md` 14.7K → 64.6K。外部核对 39 项全过，未改动的 4 个分域逐字节不变 |
