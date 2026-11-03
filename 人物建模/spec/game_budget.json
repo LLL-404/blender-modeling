@@ -1,0 +1,96 @@
+{
+  "_note": "「能不能进游戏」的预算表。阈值只写在这里，scripts/audit.py 不写死任何数字。",
+  "_basis": "动漫风独立/手游角色常规区间：单角色 2~5 万三角面，躯干 5k~15k 四边面，每顶点最多 4 根骨（glTF 硬限制）。数值是行业常规，不是这条管线实测出来的，可以改。",
+  "_levels": "must = 不过就是 FAIL（退出码 1）；warn = 只记录，不影响退出码",
+  "asset": {
+    "tri_total": {
+      "target": 50000,
+      "max": 60000,
+      "unit": "tri",
+      "level": "must",
+      "why": "单角色总三角面。超了在低端机/多角色同屏时直接掉帧"
+    },
+    "glb_mb": {
+      "target": 8.0,
+      "max": 12.0,
+      "unit": "MB",
+      "level": "warn",
+      "why": "含蒙皮与贴图后的整包体积"
+    },
+    "materials": {
+      "max": 8,
+      "unit": "个",
+      "level": "warn",
+      "why": "材质越多 draw call 越多；5 个网格 5 个材质是当前设计"
+    },
+    "images": {
+      "max": 8,
+      "unit": "张",
+      "level": "warn",
+      "why": "basecolor 一网格一张是当前设计"
+    },
+    "joints": {
+      "target": 45,
+      "max": 128,
+      "unit": "根",
+      "level": "must",
+      "why": "45 = 当前骨架设计（躯干 + 每手 13 骨）；glTF/多数引擎上限 128"
+    }
+  },
+  "structure": {
+    "quad_pct_min": {
+      "target": 90.0,
+      "unit": "%",
+      "level": "warn",
+      "why": "只作参考。四边面百分比会把「扇形贴片、发片尖端」这类结构固有的三角算成缺陷，而它们本来就不该被合并 —— 所以真判据是下面那条「可合并三角面」。"
+    },
+    "fixable_tris_max": {
+      "target": 0,
+      "unit": "个",
+      "level": "must",
+      "why": "能配成四边却还留着的三角面数（相邻、夹角≤40°、两边都是三角，对齐 mesh.tris_convert_to_quads 的主条件，但不改网格）。不为 0 说明还有该合没合的。"
+    },
+    "nonmanifold_max": {
+      "target": 0,
+      "unit": "条",
+      "level": "must",
+      "why": "非流形边会让法线/光照/物理引擎给出不确定结果"
+    },
+    "uv_required": {
+      "target": true,
+      "level": "must",
+      "why": "没 UV 就没法贴图"
+    },
+    "uv_out_of_range_max": {
+      "target": 0.0,
+      "unit": "%",
+      "level": "warn",
+      "why": "UV 落在 0~1 之外会采样到重复区域，平铺贴图时是故意的、这里只提示"
+    },
+    "weightsum_tol": {
+      "target": 0.001,
+      "level": "must",
+      "why": "顶点权重和必须为 1，否则蒙皮会缩/胀"
+    },
+    "max_influences": {
+      "target": 4,
+      "unit": "根/顶点",
+      "level": "warn",
+      "why": "blend 里超过 4 根时，glTF 导出器会按权重排序保留前 4 根并重新归一化 —— 资产不会崩，但被丢掉的那根权重会摊到其余 4 根上，形变和 DCC 预览对不上。真正的硬判据是 glb 里的 WEIGHTS_0 和是否为 1（见 gwsum 检查项）。"
+    }
+  },
+  "per_mesh_tri_warn": {
+    "Body": 22000,
+    "Hair": 12000,
+    "Outfit": 9000,
+    "Hands": 6000,
+    "Head": 6000
+  },
+  "not_implemented": [
+    "UV 重叠面积（需要逐岛相交判断，当前只查 UV 是否存在与是否越界）",
+    "贴图分辨率与色彩空间（sRGB / non-color 是否正确）",
+    "LOD 链与 mipmap",
+    "引擎内实际渲染与动画播放",
+    "骨骼命名规范与引擎人形映射（Humanoid rig）"
+  ]
+}
