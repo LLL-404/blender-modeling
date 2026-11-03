@@ -1,5 +1,8 @@
-import bpy, math, os
+import bpy, math, os, sys
 from mathutils import Vector
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import preview_common as pc  # noqa: E402  D1/D3 共享层（blender-rig 三脚本同源）
 
 SRC = r"D:\G\game\games\reroute-godot\assets\models"
 OUT = r"D:\G\github\实用工具\Blender建模\blender-rig\out"
@@ -9,8 +12,8 @@ FPS = 30
 
 
 def reset_scene():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    bpy.context.scene.render.fps = FPS
+    """工厂清场 + fps。（转调 preview_common.reset_scene；签名与行为不变。）"""
+    pc.reset_scene(fps=FPS, engine_pref=())
 
 
 def mesh_objects():
@@ -18,12 +21,9 @@ def mesh_objects():
 
 
 def world_z_range(objs):
-    zs = []
-    for o in objs:
-        mw = o.matrix_world
-        for v in o.data.vertices:
-            zs.append((mw @ v.co).z)
-    return min(zs), max(zs)
+    """顶点级世界 z 极值。（转调 preview_common.world_z_range；签名不变。
+    蒙皮分带要顶点级 z，比 bound_box 包围盒精确，勿换 pc.world_bounds。）"""
+    return pc.world_z_range(objs)
 
 
 def smoothstep(a, b, x):
