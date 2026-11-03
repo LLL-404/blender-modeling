@@ -4,6 +4,9 @@ preview/
 __pycache__/
 *.py[cod]
 
+# catalog 的上一版产物：重扫前手动备份成它，verify_catalog.py 会拿它做逐字节回归对比
+catalog_bak/
+
 # Godot 编辑器运行态缓存（godot-test/ 是 blender-rig 自带的目检小工程）
 .godot/
 
@@ -17,3 +20,8 @@ __pycache__/
 
 # ZCode 本地运行态
 .zcode/
+
+# 离线 Blender 手册（353 MB，取自 docs.blender.org；GitHub 单文件上限 100 MB，必推不上去）
+# 索引由 docs/manual_index.py 从 zip 重建，两者都不入库
+docs/blender_manual_html.zip
+docs/manual/

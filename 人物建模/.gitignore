@@ -38,3 +38,7 @@ _bak_before_*/
 
 # sweep.py 的临时 profile（每次扫描写 params/_tmp/sweep.json，扫完即弃）
 params/_tmp/
+
+# 2026-11-03 外观/发卡调试的临时脚本与日志（_ 前缀 = 一次性，不是证据链）
+opt/_*.py
+opt/_*.log
