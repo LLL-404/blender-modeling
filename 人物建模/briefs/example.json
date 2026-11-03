@@ -1,0 +1,10 @@
+{
+  "brief": "7.5 头身、bob 短发、藏青裙的少女；身高 1.68m，裙摆略短",
+  "base": "params/profile.json",
+  "set": {
+    "appearance.height": 1.68,
+    "appearance.head_to_body_ratio": 7.5,
+    "hair.style": "bob",
+    "outfit.skirt_length": 0.62
+  }
+}
