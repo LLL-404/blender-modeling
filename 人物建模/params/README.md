@@ -16,7 +16,7 @@
 | 键 | 现值 | 取值范围（建议） | 影响什么 | 接线位置 |
 |---|---|---|---|---|
 | `height` | 1.62 | 1.45~1.80 | 头顶高度；同时把 `头部整体 z` 平移到该高度 | `cfg.py:13`、`lib/head.py:45,56` |
-| `head_to_body_ratio` | 6.505 | 5.5~8.0 | 头身比（头长 = height / ratio）；改名会缩放整张 HEAD 表 | `lib/head.py:38,105` |
+| `head_to_body_ratio` | 7.5 | 5.5~8.0 | 头身比（头长 = height / ratio）；改名会缩放整张 HEAD 表，并联动 `lib/look.py` 的头部坐标映射（`_head_scale()` / `_head_shift()` 现算，2026-11-03 起不再冻在 1.063） | `lib/head.py:38,105`、`lib/look.py:_head_scale` |
 | `head_width_scale` | 1.0 | 0.95~1.05 | 头宽（HEAD 的 rx 与中线偏移 cy） | `lib/head.py:112` |
 | `face_width_scale` | 1.0 | 0.95~1.05 | 脸的前后进深（HEAD 的 ry前/ry后） | `lib/head.py:113` |
 | `eye_spacing_scale` | 1.0 | 0.9~1.1 | 眼中心 x（`EYE_X`）与眼窝、眉起点 | `lib/head.py:138,346` |
@@ -32,19 +32,21 @@
 | `hand_scale` | 1.0 | 0.9~1.15 | 掌宽/掌厚/指粗/拇指径（掌长与指长不动，保证与指骨同源） | `lib/hand.py:416` |
 | `foot_size_scale` | 1.0 | 0.9~1.15 | 脚长（y）与脚掌/脚趾半宽（高度 z 不动） | `lib/body.py:202` |
 
-## hair（9 键）
+## hair（11 键）
 
 | 键 | 现值 | 取值范围（建议） | 影响什么 | 接线位置 |
 |---|---|---|---|---|
-| `hair_color` | `[0.115, 0.088, 0.105]` | RGB 0~1 | 发色底（**未接线**，在 `lib/look.py` 里） | `lib/look.py:331` |
-| `hair_shadow_color` | `[0.055, 0.050, 0.09]` | RGB 0~1 | 发色暗档（**未接线**） | `lib/look.py:332` |
-| `bangs_groups` | 3 | 1~7（奇数更对称） | 刘海**中间组**缕数；左右外撇组恒 2 缕 | `lib/hair.py:149` |
-| `clump_count` | 7 | 5~9 | 后发束缕数（x0 步长固定 34mm，围绕中线对称） | `lib/hair.py:111` |
-| `clump_width_scale` | 1.0 | 0.75~1.25 | 后发束半宽（默认 19mm） | `lib/hair.py:114` |
-| `clump_thickness_scale` | 1.0 | 0.8~1.2 | 后发束厚度（默认 9mm，决定沟壑深度上限） | `lib/hair.py:115` |
-| `ahoge_length_scale` | 1.0 | 0.6~1.4 | 呆毛沿轨迹长度（从发根拉伸） | `lib/hair.py:207` |
-| `ahoge_thickness_scale` | 1.0 | 0.7~1.3 | 呆毛半径（全宽 = 2×半径） | `lib/hair.py:208` |
-| `twin_tails` | `false` | true/false | 是否加双马尾（现网无，默认关；开时加 2 条下垂发束） | `lib/hair.py:223` |
+| `style` | `bob` | `long` / `bob` | **发型分叉**。`bob` = 一整片锯齿刘海 + 开口外壳（`_cap` + `_bob_shell` + `_fringe`）；`long` = 分组刘海 + 后发束 + 侧发 + 呆毛（旧路径）。切到 `long` 时下面 3 个 `bangs/clump/ahoge` 键才生效，切到 `bob` 时它们全部被忽略 | `lib/hair.py:build()` |
+| `hair_color` | `[1.0, 0.565, 0.648]` | RGB 0~1 | 发色底（参考图取色 `#FF90A5`）。**已接线**：`hair_material()` 现读这个值，明暗三档由 `hair_shadow_color ÷ hair_color` 自动推出 | `lib/look.py:hair_material()` |
+| `hair_shadow_color` | `[0.216, 0.06, 0.107]` | RGB 0~1 | 发色暗档（参考图 `#37101B`）。toon 是 MULTIPLY 骨架，这里给的是**最终色**，内部会除以 `hair_color` 换成 ramp 暗端 | 同上 |
+| `hair_ring_color` | `[0.18, 0.1, 0.14]` | RGB 0~1 | 发丝「天使环」高光带的叠加色（ADD）。带位由世界 z 分带，位置遮罩另在 `hair_material()` 里硬编码 | 同上 |
+| `bangs_groups` | 3 | 1~7（奇数更对称） | 刘海**中间组**缕数；左右外撇组恒 2 缕。**仅 `long` 生效** | `lib/hair.py:_bangs()` |
+| `clump_count` | 7 | 5~9 | 后发束缕数（x0 步长固定 34mm，围绕中线对称）。**仅 `long` 生效** | `lib/hair.py:_clumps()` |
+| `clump_width_scale` | 1.0 | 0.75~1.25 | 后发束半宽（默认 19mm）。**仅 `long` 生效** | `lib/hair.py:_clumps()` |
+| `clump_thickness_scale` | 1.0 | 0.8~1.2 | 后发束厚度（默认 9mm，决定沟壑深度上限）。**仅 `long` 生效** | `lib/hair.py:_clumps()` |
+| `ahoge_length_scale` | 1.0 | 0.6~1.4 | 呆毛沿轨迹长度（从发根拉伸）。**仅 `long` 生效** | `lib/hair.py:_ahoge()` |
+| `ahoge_thickness_scale` | 1.0 | 0.7~1.3 | 呆毛半径（全宽 = 2×半径）。**仅 `long` 生效** | `lib/hair.py:_ahoge()` |
+| `twin_tails` | `false` | true/false | 是否加双马尾（现网无，默认关；开时加 2 条下垂发束）。**仅 `long` 生效** | `lib/hair.py:_twin_tails()` |
 
 ## outfit（7 键）
 

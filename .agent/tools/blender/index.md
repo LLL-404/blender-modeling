@@ -10,7 +10,10 @@
 | `Blender体检/appendix_a.py` | stardust_props 渲染的独立验收 | `python appendix_a.py`（读 out/…/manifest.json） |
 | `人物建模/scripts/build.py` | 人物建模统一入口：body/head/look/hair/outfit/rig/check/all/archive | `python 人物建模/scripts/build.py <cmd>`（ROOT 按 __file__ 推导，cwd 无关） |
 | `人物建模/scripts/check.py` | 六探针自检 → opt/logs/check_report.md | 经 `build.py check` 或直跑 |
+| `人物建模/scripts/measure.py` | 外观体检：量测 → 基准表比对 → must/warn 判定（exit 1=有 must FAIL） | `python 人物建模/scripts/measure.py [--cached] [--blend X.blend] [--spec spec/xxx.json]` |
+| `人物建模/scripts/sweep.py` | 参数→形状响应表（逐点重建+量测，产物 out/sweep_*.json） | `python 人物建模/scripts/sweep.py --param appearance.head_to_body_ratio --values 6.5,7.0,7.5,8.0` |
 | `人物建模/scripts/rename_assets.py` | 美女.blend → <角色名>_rig_v001.blend 批量改名（dry-run 默认） | `python scripts/rename_assets.py --to <角色名> [--apply]`，**执行前关前台 Blender** |
+| `BlenderAPI/README.md` | headless Blender 程序化建模封装层 bapi 的说明书（7 模块/自测/catalog 口径/已知边界） | 阅读件；自测：`blender -b --factory-startup --python-exit-code 1 --python "…/BlenderAPI/selftest.py"`（2026-11-03 实测 36/0/0，exit 0） |
 | `stardust/build_props.py` | 星尘道具批量建模+渲染（产物落游戏仓 render_src/） | `blender --background --python "…/stardust/build_props.py"` |
 | `stardust/build_characters.py` | 星尘角色四向帧渲染（→ render_body/ → 游戏仓 char_sheet.gd） | 同上形态，`-- lila` 单人 |
 | `stardust/build_characters_mpfb.py` | MPFB 人体版角色（WIP，未接游戏） | 同上 |

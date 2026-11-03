@@ -30,3 +30,11 @@ _probe/logs/
 *.blend
 *.blend1
 *.blend2
+
+# 外观改造期的改造前快照（2026-11-03）：磁盘上留作证据/回滚，不入库 ——
+# 提交之后「改造前」本来就等于 git 历史，再存一份是重复。
+# 注意：不许删（工作区规矩：删除只认作者点名）。
+_bak_before_*/
+
+# sweep.py 的临时 profile（每次扫描写 params/_tmp/sweep.json，扫完即弃）
+params/_tmp/
