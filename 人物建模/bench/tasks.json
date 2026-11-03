@@ -1,0 +1,49 @@
+{
+  "schema": "blender-bench/v1",
+  "tasks": [
+    {
+      "id": "cube_bevel",
+      "title": "带倒角立方体 + 正交渲染",
+      "rag_query": "倒角 立方体 正交渲染",
+      "expect_rag_any": ["bapi.mod.bevel", "bapi.mesh.cube"],
+      "candidate": "bench/candidates/cube_bevel.py",
+      "timeout": 60,
+      "expect_file": "cube_bevel.png",
+      "expect_text": ["[bench] cube_bevel"],
+      "tags": ["mesh", "modifier", "render"]
+    },
+    {
+      "id": "sphere_material",
+      "title": "球体 + Principled 材质 + 正交渲染",
+      "rag_query": "球体 材质 Principled 渲染",
+      "expect_rag_any": ["bapi.mesh.sphere", "bapi.mat.principled"],
+      "candidate": "bench/candidates/sphere_material.py",
+      "timeout": 60,
+      "expect_file": "sphere_material.png",
+      "expect_text": ["[bench] sphere_material"],
+      "tags": ["mesh", "material", "render"]
+    },
+    {
+      "id": "cylinder_solidify",
+      "title": "圆柱 + Solidify 加厚 + 正交渲染",
+      "rag_query": "圆柱 实体化 厚度 渲染",
+      "expect_rag_any": ["bapi.mesh.cylinder", "bapi.mod.solidify"],
+      "candidate": "bench/candidates/cylinder_solidify.py",
+      "timeout": 60,
+      "expect_file": "cylinder_solidify.png",
+      "expect_text": ["[bench] cylinder_solidify"],
+      "tags": ["mesh", "modifier", "render"]
+    },
+    {
+      "id": "cube_subsurf",
+      "title": "立方体 + Subsurf 细分 + 相机",
+      "rag_query": "立方体 细分 曲面 相机",
+      "expect_rag_any": ["bapi.mesh.cube", "bapi.mod.subsurf"],
+      "candidate": "bench/candidates/cube_subsurf.py",
+      "timeout": 60,
+      "expect_file": "cube_subsurf.png",
+      "expect_text": ["[bench] cube_subsurf"],
+      "tags": ["mesh", "modifier", "render"]
+    }
+  ]
+}
