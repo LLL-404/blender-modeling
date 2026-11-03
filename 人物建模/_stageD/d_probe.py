@@ -186,13 +186,13 @@ def geo_checks():
         return m
 
     M = stub()
-    # 2026-11-03：发型分成两套（hair.style = long / bob），D1/D2 这 5 条判据
+    # 2026-11-03：发型分成三套（hair.style = long / bob / cards），D1/D2 这 5 条判据
     # 全部是照长发型写的 —— 分组刘海(bangs_groups)、后发束(clumps)、侧发、呆毛。
-    # 鲍伯头是「一整片锯齿刘海 + 开口外壳」，这些部件在几何里根本不存在，
+    # 鲍伯头与发卡是「整片/开缝曲面」，这些部件在几何里根本不存在，
     # 探针却照样去建临时对象来量，量出来的是模板默认值，与成品无关。
-    # 所以 bob 下这 5 条标 SKIP 并指向真正管用的口径（appearance.json 里的
+    # 所以 bob / cards 下这 5 条标 SKIP 并指向真正管用的口径（appearance.json 里的
     # bangs_bottom_z / bangs_over_eye / hair_back_ratio），不假装通过。
-    bob = hairmod.charparams.get("hair.style", "long") == "bob"
+    bob = hairmod.charparams.get("hair.style", "long") in ("bob", "cards")
 
     # ---------------- D1 刘海 ----------------
     bangs = hairmod._bangs()

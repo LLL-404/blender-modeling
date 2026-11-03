@@ -72,8 +72,11 @@ def blender_exe():
     return bpyrun.blender_exe(BLENDER_ENV, DEFAULT_BLENDER)
 
 
-def run_script(step, script, blender):
-    """用 Blender 跑单个入口脚本，返回 (退出码, 耗时秒)。"""
+def run_script(step, script, blender, extra=None):
+    """用 Blender 跑单个入口脚本，返回 (退出码, 耗时秒)。
+
+    extra：透传给入口脚本的 `--` 之后参数（如 m7_aux 的 --nool）。
+    """
     script_path = os.path.join(ROOT, script)
     if not os.path.exists(script_path):
         print("[build] 错误：入口脚本不存在：" + script_path, file=sys.stderr)
@@ -81,6 +84,8 @@ def run_script(step, script, blender):
         return 2, 0.0
 
     cmd = [blender, "-b", "--factory-startup", "--python-exit-code", "1", "--python", script_path]
+    if extra:
+        cmd += ["--"] + list(extra)
     t0 = time.monotonic()
     try:
         # 不捕获 stdout：Blender 的构建日志直接透传，保留 [ratio]/[render]/[assert] 原文。
@@ -177,10 +182,13 @@ def main(argv=None):
     bpyrun.utf8_stdio()   # 管道/重定向下用 UTF-8，防 GBK 编码崩溃
     parser = argparse.ArgumentParser(
         prog="build.py",
-        description="人物建模统一构建入口（body|head|look|hair|outfit|rig|asset|check|all|archive）")
+        description="人物建模统一构建入口（body|head|look|hair|outfit|rig|asset|check|aux|all|archive）")
     parser.add_argument("step",
-                        choices=list(ALL_ORDER) + ["asset", "check", "measure", "all", "archive"],
+                        choices=list(ALL_ORDER) + ["asset", "check", "measure", "aux",
+                                                   "all", "archive"],
                         help="构建步骤；all = 依次跑 m1 -> m5_rig（不含 asset）")
+    parser.add_argument("--nool", action="store_true",
+                        help="仅 aux：关掉反法线描边壳，看裸几何（产物带 _nool 后缀）")
     args = parser.parse_args(argv)
 
     blender = blender_exe()
@@ -192,6 +200,12 @@ def main(argv=None):
 
     if args.step == "measure":
         return run_py_script("measure", "measure.py", blender)
+
+    if args.step == "aux":
+        # 全向补视角：顶 / 底 / 左 / 后 + 斜上斜下，补 m2~m5 全平视留下的盲区。
+        code, _ = run_script("aux", "m7_aux.py", blender,
+                            extra=["--nool"] if args.nool else None)
+        return code
 
     if args.step == "archive":
         return run_archive()

@@ -5,6 +5,7 @@
 正面看是发片，侧面看有厚度；后脑用一片开缝曲面 + Solidify 兜住。
 """
 import bpy
+import bmesh
 import math
 import random
 from mathutils import Vector
@@ -56,6 +57,10 @@ def _hr(v):
     return v if k == 1.0 else v * k
 
 
+_CAP_SMOOTH_ITERS = 3      # 主体环拉普拉斯轮数（原 Smooth 修改器的 iterations）
+_CAP_SMOOTH_FACTOR = 0.35  # 每轮位移比例（原修改器的 factor）
+
+
 def _cap():
     """发帽按头骨轮廓外扩 6mm 放样，保证任何高度都不会被头骨顶穿。
 
@@ -76,6 +81,7 @@ def _cap():
         rings.append(superellipse_ring(z, rx + 0.007, ryf + 0.007, cy - 0.002,
                                        0.0, p, 48, ry_back=ryb + 0.007))
     # ---- 圆顶收口（2026-11-03）----
+    n_dome = 0          # 穹顶环数；平滑时跳过它们，保住数学曲线
     # head_rows() 的最上一环就是头顶平面，`loft` 直接把它封成一个平顶 —— 3/4 视角下
     # 整颗头像扣了一块平板（out/m4_body_q34.png）。这里在最上环之上补 5 圈余弦收缩的
     # 环，把短发帽收成圆顶；顶环半径留 6% 而不是 0，避免退化环让 loft 出破面。
@@ -85,6 +91,7 @@ def _cap():
         cy0 = sum(p.y for p in base) / len(base)
         dome_h = 0.014
         steps = 6
+        n_dome = steps
         for i in range(1, steps + 1):
             t = i / steps
             # 收口曲线用 (1−t)^1.5，不是 sqrt(1−t²)：后者在 t=0 处切线水平，
@@ -94,24 +101,64 @@ def _cap():
             # 顶点处斜率归零，整条轮廓从侧面看是一条连续弧，没有转折。
             # 顶环半径留 1.2%：留太多（旧值 6%）会封出一个 1.9mm 的小圆台，
             # 描边一勾就是颅顶那个「小尖」。
-            s = max((1.0 - t) ** 1.5, 0.002)
+            # 2026-11-03（三）：1.2% 太小了 —— 48 个顶点挤进直径 0.2mm 的圆里，
+            # 相邻顶点连向量都算不准，拉普拉斯平滑（3 轮 0.35）把它们推成
+            # 一个**旋涡状凹坑**，正顶视是一个向心放射的褶（out/_cap_top.png）。
+            # 抬到 10%（半径 ≈5.4mm）：顶环还是一个规整的小圆，法线方向稳定，
+            # 封出来的平顶在正顶视只有 21 像素，且完全被鲍伯壳（rx 0.040）压住，
+            # 看不见。宁可留一个小平顶，也不能留一个旋涡。
+            s = max((1.0 - t) ** 1.5, 0.10)
             zz = z_top + dome_h * t
             rings.append([Vector((p.x * s, cy0 + (p.y - cy0) * s, zz))
                           for p in base])
-    ob = loft(rings, name="hair_cap")
     # 颅顶去折角（2026-11-03）：头骨自身在 1.600→1.618 从 70mm 陡收到 28mm
-    # （斜率 −1.64 → −3.43），发帽跟着走就会在这个位置折出一条明暗交界 ——
-    # 放大看是头顶前方一道弧线（out/_zoom_crown.png）。头骨是共用几何、动它
-    # 会连锁改头长/五官位置，所以改在发帽上做一次拉普拉斯平滑把折角抹圆。
-    # 只抹 3 轮、factor 0.35，并且把外扩从 6mm 提到 8mm 对冲收缩量：
-    # 发帽原本只比头骨大 6mm，4 轮 factor 0.5 会把它抹进头骨里去，侧面
-    # （x 最大处）凹出一个小三角，渲染看到的是背面，渲成一块亮色折片
-    # （out/_zoom_side.png 耳上那个尖角）。
-    select_only(ob)
-    sm = ob.modifiers.new("Smooth", 'SMOOTH')
-    sm.factor = 0.35
-    sm.iterations = 3
-    bpy.ops.object.modifier_apply(modifier=sm.name)
+    # （斜率 −1.64 → −3.43），发帽跟着走就会在这个位置折出一条明暗交界
+    # （out/_zoom_crown.png）。头骨是共用几何、动它会连锁改头长/五官位置，
+    # 所以折角在发帽上抹圆。
+    #
+    # 2026-11-03（三）：从「Smooth 修改器」改成**只对主体环做手工拉普拉斯**。
+    # 修改器是全网格的，dome 的收口环也被一起推 —— 实测把穹顶压塌 10mm
+    # （发顶只高出头骨 4.0mm，而 dome_h 是 14mm），并在顶点推成一个向心旋涡：
+    # 正顶视是放射状凹坑（out/_cap_top.png、_cap_top_v1.png 两次都是，
+    # 把收口半径从 0.2mm 抬到 5.4mm 也没用 —— 因为元凶是平滑不是半径）。
+    # 手工平滑跳过 n_dome 个穹顶环后，穹顶保持数学曲线，折角仍由主体环承担。
+    # factor 0.35 / 3 轮沿用原值，外扩 7mm 也沿用（平滑收缩量远小于余量）。
+    if rings and n_dome:
+        for _ in range(_CAP_SMOOTH_ITERS):
+            src = [[Vector(p) for p in ring] for ring in rings]
+            for k in range(len(rings) - n_dome):
+                m = len(src[k])
+                for i in range(m):
+                    nb = [src[k][(i - 1) % m], src[k][(i + 1) % m]]
+                    if k > 0:
+                        nb.append(src[k - 1][i])
+                    nb.append(src[k + 1][i])       # k+1 必在（后面还有 dome 环）
+                    avg = Vector((0.0, 0.0, 0.0))
+                    for q in nb:
+                        avg += q
+                    avg /= len(nb)
+                    rings[k][i] = src[k][i] + (avg - src[k][i]) * _CAP_SMOOTH_FACTOR
+    ob = loft(rings, cap_end=False, name="hair_cap")
+    if n_dome:
+        # 顶环合并成一个点（2026-11-03 三改）。
+        # loft 的 cap_end 是**重心扇形封顶**：顶环半径多大，平顶就多大。
+        # s 下限 0.10 时顶环半径 7.2mm，封出一个圆盘，圆盘与斜面之间
+        # 留一圈折角 —— 正顶视就是一个向心旋涡（out/_cap_top_v2.png，
+        # 抬半径、去平滑两次都没消掉，因为前两次都没动封顶方式）。
+        # 合并成一个顶点后，顶环的 48 个四边形变成 48 个三角形，全部
+        # 收向一个极点，法线朝正上，是标准球顶拓扑。
+        bm = bmesh.new()
+        bm.from_mesh(ob.data)
+        zmax = max(v.co.z for v in bm.verts)
+        ring = [v for v in bm.verts if abs(v.co.z - zmax) < 1e-6]
+        if len(ring) > 1:
+            bmesh.ops.pointmerge(bm, verts=ring, merge_co=(0.0, cy0, zmax))
+            bmesh.ops.dissolve_degenerate(bm, dist=1e-7, edges=bm.edges)
+            bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+            print("[cap] 顶环 %d 点合并为 1 点，z=%.4f" % (len(ring), zmax))
+        bm.to_mesh(ob.data)
+        bm.free()
+        ob.data.update()
     for v in ob.data.vertices:
         # 发际线以下的正脸部分塞回头内：发帽只负责头顶和后脑，
         # 前额的边界交给刘海去遮。
@@ -681,9 +728,243 @@ def _bob_locks():
     return out
 
 
+# ---------------- hair card 版鲍伯头（2026-11-03） ----------------
+# 表示法换成 CHARM（SIGGRAPH Asia 2025）的 5 参数 hair card：
+# 每个控制点只存「位置 + 宽 + 厚」，截面是菱形（见 lib/haircard.py）。
+# 与旧 _bob_shell 的根本差别：
+#   · 旧 = 一圈椭圆环按高度缩放再放样 → 每一层截面都是椭圆，**结构上不可能
+#     有分缕**，且必须封顶（颅顶旋涡/肚脐改了 4 次没解决）
+#   · 新 = 一张张独立发片 → 卡片之间天然有缝，不封顶，法线由外向内明确
+# 17 张卡片 × 10 控制点 ≈ 640 顶点，比旧壳的 6336 顶点少一个数量级，
+# 却多了 17 条可数的分缕。
+
+_CARDS_N = 18           # 环绕卡片数。30 张 × 24mm 读成「细条纹」，参考图是
+                        # 8~12 绺粗的；18 张间距 38mm，配合 40mm 宽正好对接
+_CARDS_CTRL = 10        # 每张卡片的控制点数
+_CARDS_OPEN_DEG = 38.0  # 正面开口半角。54° 时「刘海止于 ±48°、环绕卡片从 60° 起」，
+                        # 中间 48~60° 是一条空档，正面看是两道露出壳体的竖缝，
+                        # 两侧头发读成两片「帘子」（out/_quad_cards.png 第 1 格）。
+                        # 收到 38° 后 40° 那张进画面，正好接住刘海的边。
+                        # 40° 在 z=1.55 处 x≈71mm，可见脸半宽约 50mm —— 夹不到脸。
+_CARDS_W_ROOT = 0.0015  # 根部宽度（全宽）：18mm 时卡片顶端是一个平切面朝上，
+                        # 顶视读成一圈齿轮锯齿（out/_z_top.png）。收到 6mm 后
+                        # 顶端接近一个点，藏进发帽里就看不到切口了
+_CARDS_W_MID = 0.042    # 中段最宽 ≈ 间距（38mm）的 1.10 倍 → 只轻微搭边。
+                        # 试过 0.056（重叠 18mm）想让卡片互相叠压：结果两张
+                        # 菱形截面的卡片在空间里**穿插**，相交线是随机折线，
+                        # 侧面渲成一块块错位的硬边补丁（out/_z_side4.png，
+                        # 多色渲染确认在 hcard_05 上，out/cardid_m4_face_side.png）。
+                        # 菱形截面只能「搭边」，压不住；要真叠压得用弯曲的
+                        # 片体 + 明确的内外层，那是下一步的事。规则感交给
+                        # 长短/宽窄错落（下方 j1/j2）去打散，不靠重叠
+_CARDS_W_TIP = 0.030    # 发梢：0.010 会收成尖刺（像章鱼腿），平切才像短发
+_CARDS_T_ROOT = 0.0022  # 根部厚度（全厚）：壳外表面在 4.5mm，卡片中心 5.0mm，
+                        # 半厚 1.1mm → 外表面 6.1mm，凸出壳 1.6mm。旧值 3.6mm
+                        # 时凸出 2.8mm，沟的深度是宽度的 7%，读成「南瓜瓣」
+_CARDS_T_TIP = 0.0009   # 发梢厚度
+
+
+def _se_pt(row, a, out=0.0):
+    """超椭圆上方位角 a 处的点，沿径向向外 out 米。
+
+    a = 0 在正前方（-y），a = π/2 在 +x 侧，a = π 在正后（+y）。
+    头骨前后半径不同（ryf/ryb），按 cos 的正负分别取。
+    """
+    z, rx, ryf, ryb, cy, p = row
+    s, c = math.sin(a), math.cos(a)
+    ry = ryf if c >= 0.0 else ryb
+    e = 2.0 / max(1e-6, p)
+    x = rx * math.copysign(abs(s) ** e, s)
+    y = cy - ry * math.copysign(abs(c) ** e, c)
+    v = Vector((x, y, z))
+    if out:
+        d = Vector((x, y - cy, 0.0))
+        if d.length > 1e-9:
+            v = v + d.normalized() * out
+    return v
+
+
+def _cards_bob():
+    """鲍伯头（hair card 版）：贴在 `_bob_shell` 表面的一圈发片。
+
+    位置必须**复刻壳的半径公式**，不能只跟表值。壳里是
+    `max(表值 × _RX_K, 头骨 + _HAIR_T)` —— 中下段被头骨撑大，所以只跟表值的
+    卡片会整圈被壳埋掉，只有最上一段（壳已结束、归发帽管）露出来，渲成一顶
+    「花冠」（out/_cmp_cards4~6.png 连续三次都是这个症状）。
+
+    外扩取 0.0055：壳自身有 Solidify（thickness 0.0045），卡片外表面要到
+    壳外表面之外才能看见。
+    """
+    import haircard as hc
+
+    chin, top = _chin_top()
+    h = top - chin
+    src = _bob_dense(14)
+    rows = resample(headmod.head_rows(), "z", 0.006)
+    center = Vector((0.0, 0.014, chin + h * 0.55))
+
+    def at(t):
+        """在 src 上插值出 (rx, ry, cy)，已乘 _RX_K。
+
+        注意 `_bob_dense` 返回的是**升序**（src[0] 是最低的 t=-0.09，
+        src[-1] 是最高 0.907）。按降序写会让每个 t 都命中第一个分支、
+        全部返回最低处的半径 —— 卡片退化成一根根等半径的竖柱：顶部因为
+        壳也小所以露出来，中下段全被壳埋掉（out/_cmp_cards4~7.png 连续
+        四次都是「只有头顶有分缕」，根因就在这里）。
+        """
+        if t <= src[0][0]:
+            r = src[0]
+        elif t >= src[-1][0]:
+            r = src[-1]
+        else:
+            r = src[-1]
+            for r0, r1 in zip(src, src[1:]):        # r0[0] < r1[0]
+                if r0[0] <= t <= r1[0]:
+                    w = (t - r0[0]) / max(1e-9, r1[0] - r0[0])
+                    r = tuple(r0[i] + (r1[i] - r0[i]) * w for i in range(4))
+                    break
+        return r[1] * _RX_K, r[2] * _RX_K, r[3]
+
+    # 下端延长 0.05：卡片最低点必须低于壳的最低行，否则发梢下方会露出一圈
+    # 壳（分色渲染 out/split_base_m4_face_side.png 底部那条绿色带，约 25mm）。
+    # at() 对超出表的 t 会 clamp 到首/末行，等于垂直向下延伸，正好接上。
+    t_hi, t_lo = src[-1][0], src[0][0] - 0.05
+    out_off = 0.0050
+    # root_frac 0.12 → 0.34：宽度从 1.5mm 长到 42mm 只用 1 个控制点（10mm 高）
+    # 时，卡片上半段是一个 33mm 宽、8mm 高的硬三角，顶视/侧视都是一排「山峰」。
+    # 摊到 3 个控制点后变成锥形发缕，尖端从发旋里长出来。
+    widths = hc.blend_widths(_CARDS_CTRL, _CARDS_W_ROOT, _CARDS_W_MID,
+                             _CARDS_W_TIP, root_frac=0.34, tip_frac=0.22)
+    thicks = hc.blend_thicks(_CARDS_CTRL, _CARDS_T_ROOT, _CARDS_T_TIP)
+
+    parts = []
+    for k in range(_CARDS_N):
+        # 方位角加 ±3.2° 抖动：等距排列从背后看是一圈规整竖肋，像灯罩
+        # （out/_quad_cards.png 第 4 格）。长短/宽窄错落打散纵向，抖动打散横向。
+        a = (2.0 * math.pi * k / _CARDS_N
+             + 0.090 * math.sin(k * 3.100 + 0.7))
+        aa = a if a <= math.pi else a - 2.0 * math.pi
+        if abs(math.degrees(aa)) < _CARDS_OPEN_DEG:
+            continue                          # 正面开口：留给刘海
+
+        # 错落：黄金角取伪随机（sin(k·2.399)），无周期、可复现、不用 random。
+        # 等长等宽是「南瓜瓣」的另一半原因 —— 只改宽度不改长度，沟会变浅但
+        # 仍然等距；只改长度不改宽度，管子还是管子。
+        j1 = 0.5 + 0.5 * math.sin(k * 2.399)           # 末端高度 0~1
+        j2 = 0.5 + 0.5 * math.sin(k * 5.113 + 1.7)     # 宽度 0~1
+        j3 = (k % 3) - 1                               # -1/0/+1 三档分层
+        lo = t_lo + 0.095 * j1                         # 末端高低差约 20mm
+        wsc = 0.84 + 0.30 * j2                         # 宽度 ±15%
+        # 走向：卡片不是纯竖直的。顶端在 a、末端偏移 spread，读作「从发旋
+        # 向两侧斜下」。纯竖直 + 等距是「罗纹灯罩」的根 —— 改宽度/长度/方位
+        # 只能打散规律感，改不了「竖条」本身（out/_quad_cards2~3.png 背视）。
+        spread = 0.15 * math.sin(k * 2.399 + 0.4)      # ±8.6°
+        # 宽度剖面也逐张抖：最宽处的高度由 root_frac 决定，全卡一致时
+        # 背面看是一圈横向对齐的「罗纹」（out/_quad_cards2.png 第 4 格）。
+        # 单张重建剖面，成本可忽略（每张才 10 个数）。
+        w_here = hc.blend_widths(_CARDS_CTRL, _CARDS_W_ROOT * wsc,
+                                 _CARDS_W_MID * wsc, _CARDS_W_TIP * wsc,
+                                 root_frac=0.26 + 0.20 * j2,
+                                 tip_frac=0.16 + 0.16 * j1)
+        # 分层：相邻卡片错开 0.7mm 半径，读作「后一张压在前一张上」。
+        # 完全共面会在交叠区产生硬边和 z-fighting。
+        off = out_off + 0.0007 * j3
+        pts = []
+        for i in range(_CARDS_CTRL):
+            u = i / (_CARDS_CTRL - 1)
+            t = t_hi + (lo - t_hi) * u
+            rx0, ry0, cy = at(t)
+            z = chin + h * t
+            row = _row_at(rows, z)
+            f_rx, ryf, ryb = row[1], row[2], row[3]
+            # 位置**必须复用 _bob_shell 的截面公式**。这里原来是
+            #   rx = max(rx0, f_rx + _HAIR_T) + off
+            #   y  = cy ± rx·cos(a)          ← 用「头骨 x 半宽」当 y 半径，还把
+            #                                    cy 当半径的一部分加进去
+            # 结果正后方向 y 比壳多出 16mm，渲成一根伸出轮廓的薄针
+            # （out/split_now_m4_face_side.png 右上那根红线；多色渲染确认是
+            # 后脑那张卡片）。壳用的是 yf=min(cy-ry0, -(ryf+T))、yb=max(...)，
+            # 两条式子差一个 cy 和 ryf/ryb 的区别，只有正前/正后能看出来。
+            # 收口区间 18mm（0.82→0.907）。两头都试过：
+            # · 40mm（0.72 起）→ 过渡面是一大块朝上的斜面，侧视是「翻起的盖板」
+            #   （out/_z_side3.png y≈270 那条水平浅色带）
+            # · 8mm（0.87 起）→ 藏得住，但卡片上半段还宽 6~15mm，顶端仍是
+            #   一根根凸出发帽轮廓的尖锥（out/_z_side5.png 顶部与右缘那几根）
+            # 18mm 处卡片宽度已收到 ~11mm，过渡面小到看不出。
+            k_in = _smoothstep((t - 0.82) / max(1e-6, _BOB_TOP - 0.82))
+            off_e = off - 0.012 * k_in
+            rx = max(rx0, f_rx + _HAIR_T) + off_e
+            yf = min(cy - ry0, -(ryf + _HAIR_T)) - off_e     # 前表面（负）
+            yb = max(cy + ry0, ryb + _HAIR_T) + off_e        # 后表面（正）
+            aa = a + spread * u                              # 越往下越偏
+            k = 0.5 * (1.0 + math.cos(aa))                   # 1=正前 0=正后
+            pts.append(Vector((rx * math.sin(aa), yb + (yf - yb) * k, z)))
+        parts.append(hc.hair_card("hcard_%02d" % k, pts, w_here, thicks,
+                                  center=center))
+    return parts
+
+
+def _cards_fringe():
+    """刘海（hair card 版）：正面开口里放 5 张短发片，中间短、两侧长。"""
+    import haircard as hc
+
+    chin, top = _chin_top()
+    h = top - chin
+    rows = resample(headmod.head_rows(), "z", 0.006)
+    center = Vector((0.0, 0.014, chin + h * 0.55))
+
+    # (方位角°, 根 z, 尖 z, 中段宽)
+    # 2026-11-03（五改）：原来 7 张的尖 z 只有 118~132（差 6mm）→ 正面看是
+    # 一排等长的竖条，末端还是平切圆头，读成「梳齿」（out/_z_bangs.png）。
+    # 真发的刘海是**长短交替**的：短的一绺让别人看见、长的一绺盖住缝。
+    # 现在差 34mm（118~152），且刻意不单调（短-长-短-长交错）。
+    # 中段宽 22~31mm ≈ 13° 弧长（25mm），相邻重叠约 2 倍，短的也不会露皮肤。
+    spec = [(-48.0, top - 0.004, chin + 0.150, 0.023),
+            (-33.0, top - 0.004, chin + 0.128, 0.028),
+            (-17.0, top - 0.004, chin + 0.145, 0.030),
+            (0.0, top - 0.004, chin + 0.134, 0.031),
+            (17.0, top - 0.004, chin + 0.147, 0.029),
+            (33.0, top - 0.004, chin + 0.126, 0.027),
+            (48.0, top - 0.004, chin + 0.152, 0.022)]
+
+    parts = []
+    for i, (deg, z0, z1, wmid) in enumerate(spec):
+        a = math.radians(deg)
+        pts = []
+        # 末端向两侧外撇 3°：真发的刘海发梢不会笔直垂下，总会往旁边带一点。
+        # 只在 u>0.5 之后生效，根部仍从同一个发旋长出来。
+        side = 1.0 if deg >= 0.0 else -1.0
+        for j in range(_CARDS_CTRL):
+            u = j / (_CARDS_CTRL - 1)
+            z = z0 + (z1 - z0) * u
+            row = _row_at(rows, max(z, chin + 0.012))
+            row = (z,) + tuple(row[1:])
+            # 刘海要离开额头一点，否则插进头骨里。
+            # 剖面是「中段鼓出、末端贴回脸」：sin 驼峰给外凸，u>0.55 之后
+            # 再往回收 —— 末端收拢才是内扣，一直往外推会变成一顶帽檐。
+            lift = (0.012 * math.sin(math.pi * u)
+                    - 0.007 * max(0.0, u - 0.55) / 0.45)
+            aa = a + side * math.radians(3.0) * max(0.0, u - 0.5) * 2.0
+            pts.append(_se_pt(row, aa, _HAIR_T + 0.008 + lift))
+        # 末端收尖到 2.2mm：原来留 wmid*0.55（≈15mm）再平切，是一个圆头，
+        # 正面看是一排「梳齿」。尖梢才有发丝的方向感。
+        ws = hc.blend_widths(_CARDS_CTRL, wmid * 0.32, wmid, 0.0022,
+                             root_frac=0.16, tip_frac=0.34)
+        ts = hc.blend_thicks(_CARDS_CTRL, 0.0040, 0.0010)
+        parts.append(hc.hair_card("hfringe_%02d" % i, pts, ws, ts, center=center))
+    return parts
+
+
 def build(mats):
     style = charparams.get("hair.style", _DEFAULT_STYLE)
-    if style == "bob":
+    if style == "cards":
+        # hair card 版（CHARM 5 参数表示）：壳提供体积，卡片提供表面分缕。
+        # 与 bob 的区别只在「有没有分缕」：bob 是一整块壳，从任何角度切都是椭圆；
+        # cards 在壳外再贴 18 张发片（+刘海），读作一绺一绺。
+        parts = [_cap(), _bob_shell()]
+        parts += _cards_bob()
+        parts += _cards_fringe()
+    elif style == "bob":
         parts = [_cap(), _bob_shell(), _fringe()]
     else:
         parts = [_cap(), _back_sheet()]

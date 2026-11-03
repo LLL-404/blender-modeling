@@ -1,127 +1,127 @@
 {
- "_meta": {
-  "name": "修长少女 · 7.5 头身",
-  "created": "2026-11-03",
-  "height": 1.62,
-  "heads_ratio": 7.5,
-  "caliber": "头身比与身高一律用「骨相头顶」（Head z_max），不用发顶（呆毛 +46.5mm）。与 DESIGN §1.2、_stageA/a2_face_probe.py 同口径。",
-  "level_meaning": {
-   "must": "不达标 = FAIL，必须修",
-   "warn": "只记录不拦，已知取舍项"
+  "_meta": {
+    "name": "修长少女 · 7.5 头身",
+    "created": "2026-11-03",
+    "height": 1.62,
+    "heads_ratio": 7.5,
+    "caliber": "头身比与身高一律用「骨相头顶」（Head z_max），不用发顶（呆毛 +46.5mm）。与 DESIGN §1.2、_stageA/a2_face_probe.py 同口径。",
+    "level_meaning": {
+      "must": "不达标 = FAIL，必须修",
+      "warn": "只记录不拦，已知取舍项"
+    },
+    "derived": "head_len = height / heads_ratio = 1.62 / 7.5 = 0.216；neck_visible = 新下巴 1.404 − 躯干顶 1.325 = 0.079"
   },
-  "derived": "head_len = height / heads_ratio = 1.62 / 7.5 = 0.216；neck_visible = 新下巴 1.404 − 躯干顶 1.325 = 0.079"
- },
- "heads_ratio": {
-  "label": "头身比（骨相）",
-  "target": 7.5,
-  "tol": 0.06,
-  "unit": "头",
-  "level": "must",
-  "source": "用户指定 2026-11-03（原 6.505）"
- },
- "head_len": {
-  "label": "头长（下巴→头顶）",
-  "target": 0.216,
-  "tol": 0.004,
-  "unit": "m",
-  "level": "must",
-  "source": "height / heads_ratio 推导"
- },
- "neck_visible": {
-  "label": "可见颈长（下巴→躯干顶）",
-  "target": 0.078,
-  "tol": 0.010,
-  "unit": "m",
-  "level": "must",
-  "source": "修长系颈长 ≈ 头长 × 0.36；当前 0.046 明显偏短"
- },
- "head_w_over_len": {
-  "label": "头宽/头长",
-  "target": 0.872,
-  "tol": 0.050,
-  "unit": "",
-  "level": "must",
-  "source": "沿用当前风格比例（0.2172/0.249），缩头时等比缩，避免脸被压扁"
- },
- "head_len_over_depth": {
-  "label": "头长/头深",
-  "target": 1.322,
-  "tol": 0.080,
-  "unit": "",
-  "level": "must",
-  "source": "沿用当前风格比例（0.249/0.1883）"
- },
- "hair_cap_gap": {
-  "label": "发帽厚度（比头骨多出的前后量）",
-  "target": 0.017,
-  "tol": 0.006,
-  "unit": "m",
-  "level": "must",
-  "source": "是有体积的正常发帽，缩头后要保持绝对值不被等比压薄。2026-11-03 bob 发型下实测 20.2mm：这个口径量的是「上 1/3 高度里 Hair 与 Head 的前后跨度差」，而 bob 的刘海在脸前凸出，计入前部就会偏高（BEFORE 25.1mm，收薄刘海后 20.2mm）。长发型下旧实测 0.0175"
- },
- "hair_back_ratio": {
-  "label": "后脑厚宽比（最扁一层）",
-  "target": 0.45,
-  "min": 0.20,
-  "unit": "",
-  "level": "must",
-  "source": "下限型判据（只判不扁，不判上限）。改口径自「绝对厚度」：发梢收尖时绝对厚度必然只有 17mm（宽 172mm），旧指标把它当板误报。真正像板的是又宽又薄，即厚宽比塌下去。旧模型此处 0.09，加映射后 0.58"
- },
- "head_body_gap": {
-  "label": "头身接缝（头底−颈柱顶）",
-  "target": 0.000,
-  "min": -0.012,
-  "max": 0.002,
-  "unit": "m",
-  "level": "must",
-  "source": "非对称：正值=露缝（头浮起来，直接穿帮），负值=颈柱插进头内（被头包住，看不见）。所以下界放到 −12mm，上界只给 +2mm。7.5 头身改造时未修是 +8.7mm，插 8mm 后 −9.4mm"
- },
- "hair_over_head_top": {
-  "label": "发顶高出头骨",
-  "target": 0.045,
-  "tol": 0.015,
-  "unit": "m",
-  "level": "warn",
-  "source": "长发型的呆毛特征（旧实测 0.0465）。**对 bob 不适用**：鲍伯头贴头皮、没有呆毛，头顶只多出 14mm 的发帽厚度，所以这条在 bob 下恒为 WARN，列为已知取舍不拦 —— 目标值保留 45mm 是为了长发路径切回去时仍然有效，不为凑数下调"
- },
- "skirt_taper": {
-  "label": "裙摆锥度（裙中半宽/裙腰半宽）",
-  "target": 1.20,
-  "tol": 0.12,
-  "unit": "",
-  "level": "must",
-  "source": "当前是直筒（1.0），A 字裙应有明显外扩；1.08~1.32 为可接受区间"
- },
- "waist_over_hip": {
-  "label": "腰宽/髋宽",
-  "target": 0.645,
-  "tol": 0.035,
-  "unit": "",
-  "level": "must",
-  "source": "DESIGN §1.2 目标 0.62~0.68"
- },
- "waist_over_shoulder": {
-  "label": "腰宽/肩宽",
-  "target": 0.800,
-  "tol": 0.060,
-  "unit": "",
-  "level": "must",
-  "source": "修长系收腰判据；当前 0.847 偏桶形"
- },
- "shoulder_over_headw": {
-  "label": "肩宽/头宽",
-  "target": 1.25,
-  "tol": 0.12,
-  "unit": "",
-  "level": "must",
-  "source": "7.5 头身缩头后自然从 1.087 上升到 ≈1.25，这是「修长」的来源；不额外改肩宽"
- },
- "leg_ratio": {
-  "label": "腿长/身高（裆高口径）",
-  "target": 0.480,
-  "tol": 0.015,
-  "unit": "",
-  "level": "warn",
-  "source": "DESIGN §1.2 目标 0.48~0.50，当前 0.469。DESIGN 明确标注「抬 CROTCH_Z 连锁太大，留待后续」，本次只记录不拦"
- }
+  "heads_ratio": {
+    "label": "头身比（骨相）",
+    "target": 7.5,
+    "tol": 0.06,
+    "unit": "头",
+    "level": "must",
+    "source": "用户指定 2026-11-03（原 6.505）"
+  },
+  "head_len": {
+    "label": "头长（下巴→头顶）",
+    "target": 0.216,
+    "tol": 0.004,
+    "unit": "m",
+    "level": "must",
+    "source": "height / heads_ratio 推导"
+  },
+  "neck_visible": {
+    "label": "可见颈长（下巴→躯干顶）",
+    "target": 0.078,
+    "tol": 0.01,
+    "unit": "m",
+    "level": "must",
+    "source": "修长系颈长 ≈ 头长 × 0.36；当前 0.046 明显偏短"
+  },
+  "head_w_over_len": {
+    "label": "头宽/头长",
+    "target": 0.872,
+    "tol": 0.05,
+    "unit": "",
+    "level": "must",
+    "source": "沿用当前风格比例（0.2172/0.249），缩头时等比缩，避免脸被压扁"
+  },
+  "head_len_over_depth": {
+    "label": "头长/头深",
+    "target": 1.322,
+    "tol": 0.08,
+    "unit": "",
+    "level": "must",
+    "source": "沿用当前风格比例（0.249/0.1883）"
+  },
+  "hair_cap_gap": {
+    "label": "头发厚度（比头骨多出的前后量）",
+    "target": 0.048,
+    "tol": 0.014,
+    "unit": "m",
+    "level": "must",
+    "source": "2026-11-03 起口径变了：这一条量的是「上 1/3 高度里 Hair 与 Head 的前后跨度差」，而 Hair 从这一版开始是「壳 + 18 张 hair card + 刘海」—— 卡片贴在壳外 5.5mm、半厚 1.8mm，前后各多 7.3mm，实测从 bob 时代的 20.2mm 涨到 44.9mm。44.9mm 不是缺陷：鲍伯头的头发深度 ≈ 头高（216mm）的 0.97，属正常体积。旧 target 17mm 是「单层发帽」的口径，不再适用。区间 34~62mm 对应「多出 40~62mm」的经验范围。历史：长发型 0.0175；bob 收薄刘海后 20.2mm。"
+  },
+  "hair_back_ratio": {
+    "label": "后脑厚宽比（最扁一层）",
+    "target": 0.45,
+    "min": 0.2,
+    "unit": "",
+    "level": "must",
+    "source": "下限型判据（只判不扁，不判上限）。改口径自「绝对厚度」：发梢收尖时绝对厚度必然只有 17mm（宽 172mm），旧指标把它当板误报。真正像板的是又宽又薄，即厚宽比塌下去。旧模型此处 0.09，加映射后 0.58"
+  },
+  "head_body_gap": {
+    "label": "头身接缝（头底−颈柱顶）",
+    "target": 0.0,
+    "min": -0.012,
+    "max": 0.002,
+    "unit": "m",
+    "level": "must",
+    "source": "非对称：正值=露缝（头浮起来，直接穿帮），负值=颈柱插进头内（被头包住，看不见）。所以下界放到 −12mm，上界只给 +2mm。7.5 头身改造时未修是 +8.7mm，插 8mm 后 −9.4mm"
+  },
+  "hair_over_head_top": {
+    "label": "发顶高出头骨",
+    "target": 0.045,
+    "tol": 0.015,
+    "unit": "m",
+    "level": "warn",
+    "source": "长发型的呆毛特征（旧实测 0.0465）。**对 bob 不适用**：鲍伯头贴头皮、没有呆毛，头顶只多出 14mm 的发帽厚度，所以这条在 bob 下恒为 WARN，列为已知取舍不拦 —— 目标值保留 45mm 是为了长发路径切回去时仍然有效，不为凑数下调"
+  },
+  "skirt_taper": {
+    "label": "裙摆锥度（裙中半宽/裙腰半宽）",
+    "target": 1.2,
+    "tol": 0.12,
+    "unit": "",
+    "level": "must",
+    "source": "当前是直筒（1.0），A 字裙应有明显外扩；1.08~1.32 为可接受区间"
+  },
+  "waist_over_hip": {
+    "label": "腰宽/髋宽",
+    "target": 0.645,
+    "tol": 0.035,
+    "unit": "",
+    "level": "must",
+    "source": "DESIGN §1.2 目标 0.62~0.68"
+  },
+  "waist_over_shoulder": {
+    "label": "腰宽/肩宽",
+    "target": 0.8,
+    "tol": 0.06,
+    "unit": "",
+    "level": "must",
+    "source": "修长系收腰判据；当前 0.847 偏桶形"
+  },
+  "shoulder_over_headw": {
+    "label": "肩宽/头宽",
+    "target": 1.25,
+    "tol": 0.12,
+    "unit": "",
+    "level": "must",
+    "source": "7.5 头身缩头后自然从 1.087 上升到 ≈1.25，这是「修长」的来源；不额外改肩宽"
+  },
+  "leg_ratio": {
+    "label": "腿长/身高（裆高口径）",
+    "target": 0.48,
+    "tol": 0.015,
+    "unit": "",
+    "level": "warn",
+    "source": "DESIGN §1.2 目标 0.48~0.50，当前 0.469。DESIGN 明确标注「抬 CROTCH_Z 连锁太大，留待后续」，本次只记录不拦"
+  }
 }

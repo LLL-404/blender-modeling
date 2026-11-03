@@ -18,7 +18,7 @@
     "foot_size_scale": 1.0
   },
   "hair": {
-    "style": "bob",
+    "style": "cards",
     "hair_color": [1.0, 0.565, 0.648],
     "hair_shadow_color": [0.216, 0.06, 0.107],
     "hair_ring_color": [0.18, 0.1, 0.14],
