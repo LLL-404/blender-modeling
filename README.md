@@ -257,4 +257,15 @@ bapi.mat.assign(ob, bapi.mat.principled("skin", base_color=(0.9, 0.7, 0.6)))
 | **stardust 未在本仓真实跑过** | `blender-rig` 三脚本已于 2026-11-03 实跑通过（见上文）；stardust 6 个脚本会往游戏仓写产物，仍留给游戏工程验证（硬编码目标已逐一存在性验证） |
 | **`rename_assets.py` 只做过 dry-run** | 改名未执行，等角色名定下 |
 | **BlenderAPI 尚未接入任何管线** | 目前只有自身 36 项 selftest 证据；要接管须先复跑 selftest 再按模块替换（`catalog/` 只证明 API 存在，不证明 headless 可用） |
-| **仓库无 LICENSE** | 未声明开源许可，默认保留所有权利。要开放请先补 `LICENSE` |
+
+## 许可
+
+本仓代码以 **MIT** 协议发布，全文见 [LICENSE](LICENSE)（Copyright © 2026 LLL-404）。
+
+两点边界说明：
+
+- **Blender 本身不是本仓的一部分，也不随本仓分发**。脚本通过外部 `blender.exe -b --python` 调用它，Blender 按其自身许可（GPL）独立分发。用 `bpy` 写脚本/插件不改变本仓代码的许可。
+- `BlenderAPI/catalog/` 是在本机 **Blender 5.2.2 上扫描生成的 API 元数据**（操作符/属性的名字、签名、枚举值），不含 Blender 源码或文档正文；它是接口事实的机器转录，不是对 Blender 文档的再分发。
+
+> 如需在分发物里附加作者署名，保留 `LICENSE` 与本节即可。
+

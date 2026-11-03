@@ -102,6 +102,9 @@ r∝(z_top−z)^(2/3)）。磨圆会让颅顶 1.62~1.63 段最宽 +3~4mm = 动�
   S8/S9 完成状态、R3/R4 结论、BlenderAPI、blender-rig 实跑全部入档。
 - `.agent/tools/blender/index.md`：补 measure / sweep / BlenderAPI 三个入口。
 - `人物建模/.gitignore`：加 `_bak_before_*/`（改造前快照，磁盘保留、不入库）与 `params/_tmp/`（sweep 临时 profile）。
+- **新增 `LICENSE`（MIT，Copyright © 2026 LLL-404）**：根 README 删去「仓库无 LICENSE」缺口并新增
+  「许可」一节，写明两条边界——Blender 本体不随本仓分发（外部调用，GPL 独立）；`BlenderAPI/catalog/`
+  是在本机 5.2.2 上扫描的 API 元数据（名字/签名/枚举值），不含 Blender 源码或文档正文。
 
 ### 验证汇总（2026-11-03 定版轮）
 
