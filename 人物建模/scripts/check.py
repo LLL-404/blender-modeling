@@ -21,9 +21,11 @@ import subprocess
 import sys
 import time
 
+import bpyrun  # D12：Blender 定位单源（本目录 scripts/bpyrun.py）
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_BLENDER = r"D:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
-BLENDER_ENV = "BLENDER_EXE"
+DEFAULT_BLENDER = bpyrun.DEFAULT_BLENDER
+BLENDER_ENV = bpyrun.BLENDER_ENV
 
 # 探针清单：(短名, 相对路径, 覆盖什么)
 PROBES = (
@@ -46,14 +48,11 @@ _TRACEBACK = "Traceback (most recent call last)"
 
 
 def _blender():
-    path = os.environ.get(BLENDER_ENV) or DEFAULT_BLENDER
-    path = os.path.abspath(os.path.expanduser(path))
-    if not os.path.exists(path):
-        print("[check] 错误：找不到 Blender：", file=sys.stderr)
-        print("        " + path, file=sys.stderr)
-        print("        请安装 Blender 5.2，或设置环境变量 {0}。".format(BLENDER_ENV), file=sys.stderr)
-        return None
-    return path
+    """返回可用的 Blender 路径；不可用时打印中文提示并返回 None。
+
+    （D12 起转调 bpyrun.blender_exe；签名与返回值不变。）
+    """
+    return bpyrun.blender_exe(BLENDER_ENV, DEFAULT_BLENDER)
 
 
 def _classify(line):
@@ -164,6 +163,7 @@ def _write_report(rows, blender):
 
 
 def main():
+    bpyrun.utf8_stdio()   # 管道/重定向下用 UTF-8，防 GBK 编码崩溃
     blender = _blender()
     if blender is None:
         return 2
