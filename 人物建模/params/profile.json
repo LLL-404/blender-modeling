@@ -1,7 +1,7 @@
 {
   "appearance": {
     "height": 1.62,
-    "head_to_body_ratio": 6.505,
+    "head_to_body_ratio": 7.5,
     "head_width_scale": 1.0,
     "face_width_scale": 1.0,
     "eye_spacing_scale": 1.0,
@@ -18,8 +18,10 @@
     "foot_size_scale": 1.0
   },
   "hair": {
-    "hair_color": [0.115, 0.088, 0.105],
-    "hair_shadow_color": [0.055, 0.050, 0.09],
+    "style": "bob",
+    "hair_color": [1.0, 0.565, 0.648],
+    "hair_shadow_color": [0.216, 0.06, 0.107],
+    "hair_ring_color": [0.18, 0.1, 0.14],
     "bangs_groups": 3,
     "clump_count": 7,
     "clump_width_scale": 1.0,

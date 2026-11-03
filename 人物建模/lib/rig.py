@@ -269,6 +269,49 @@ def side_cap(x, mid=SIDE_CAP_LO):
 HIP_ZONE = (0.70, 1.00, 0.10)   # 胯部混合区：z 0.70~1.00 且 |x|<100mm
 
 
+# ---------------- R3 返工：胯部混合区以外的静置骨/跨侧腿骨连续衰减（2026-11-03） ----------------
+# 六探针门 b_probe R3 在 cross 60/30 下 17 个面法线翻转（35/15 为 0），逐面定位
+# （诊断件 out/r34_diag2.py）：
+#   · 15 面在外左大腿 z≈0.64 一圈：顶点带 4~6% 的 hips/spine（静置骨，距其骨段
+#     200mm+）。60° 摆动时静置份额把大腿表面掀过 90°（rest 法线朝 +x，变形后朝
+#     +z，dot≈−0.01~−0.25）；35/15 行程短，同机制不翻。
+#   · 3 面在小腿中线 z≈0.24：|x|<30mm 中轴带对侧 shin 不设防（~9%），两侧摆角差
+#     30° × 行程差 ~200mm 把内侧条带撕折。
+#   · 1 面在小腹 z≈1.05：body_allow 在 z=1.05 的候选集跳变（上有臂骨、下有腿骨），
+#     跨面一侧顶点带 6.8% thigh.R 被腿带走、邻点带臂骨不动。
+# 三处都是「权重场梯度 × 姿势行程差」的剪切折叠；preserve volume（DQ）实测更糟
+# （43 面）。用 weight_nearest_banded 的 atten 钩子做**连续**衰减（无候选集硬断层），
+# 胯部混合区（0.70~1.00）一行不动 —— R3 的边拉伸判据人群（z 0.70~1.05、|x| 20~55mm）
+# 因此不受影响。
+STATIC_TORSO = ("hips", "spine", "chest")
+LEG_CHAIN = ("thigh", "shin", "foot", "toe")
+STATIC_FADE = (0.62, 0.70)     # 静置躯干骨：z≤0.62 清零，0.62~0.70 线性回补
+CROSS_FADE = (0.55, 0.70)      # 跨侧腿骨：z≤0.55 清零，0.55~0.70 线性回补（裆部混合保留）
+THIGH_FADE = (1.00, 1.05)      # 同侧腿骨上探：z≥1.05 清零（肚子不吃大腿）
+
+
+def _fade_in(z, lo, hi):
+    """z≤lo → 0，z≥hi → 1，中间线性。"""
+    if z >= hi:
+        return 1.0
+    if z <= lo:
+        return 0.0
+    return (z - lo) / (hi - lo)
+
+
+def leg_atten(co, bone):
+    """weight_nearest_banded 的 atten：按骨名 × 位置返回权重乘子（≥0）。见上节注释。"""
+    z = co.z
+    if bone in STATIC_TORSO:
+        return _fade_in(z, *STATIC_FADE)
+    if bone.endswith((".L", ".R")) and bone[:-2] in LEG_CHAIN:
+        own = bone.endswith(".L" if co.x >= 0 else ".R")
+        if own:
+            return 1.0 - _fade_in(z, *THIGH_FADE)
+        return _fade_in(z, *CROSS_FADE)
+    return 1.0
+
+
 def in_hip_zone(co):
     return HIP_ZONE[0] <= co.z <= HIP_ZONE[1] and abs(co.x) < HIP_ZONE[2]
 
@@ -357,7 +400,7 @@ def bind_all(body_ob, cloth_ob, head_ob, hair_ob, hands_ob, arm, side_lock=False
     # keep=4 而不是 3：胯部（hips↔thigh 交界）用 3 骨时，相邻顶点的候选集合会跳变，
     # 交叉姿势下实测最大边拉伸 4.45×；加到 4 骨让交界处的权重集合连续。
     weight_nearest_banded(body_ob, arm, body_bones, power=3.0, keep=5,
-                          allow=body_allow, side_lock=side_lock)
+                          allow=body_allow, side_lock=side_lock, atten=leg_atten)
     weight_outfit(cloth_ob, arm, power=4.0, keep=2)
     rigid_to(head_ob, arm, "head")
     rigid_to(hair_ob, arm, "head")

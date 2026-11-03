@@ -9,19 +9,50 @@ import math
 from mathutils import Vector
 
 import optio
+import charparams
 
 
 # ---------------- A6：与 head.py 完全一致的头部坐标映射 ----------------
-# head.py 不 import look.py，所以这里必须自己写一份；两处 HEAD_ANCHOR /
-# HEAD_SCALE / HEAD_SHIFT 任何一个数变了，都要同步改另一个文件。
+# head.py 不 import look.py，所以这里必须自己写一份；两处任何一个数变了，
+# 都要同步改另一个文件。
 _HEAD_ANCHOR = 1.3836
-_HEAD_SCALE = 1.063
-_HEAD_SHIFT = -0.0127672
+_DEFAULT_HEAD_SCALE = 1.063
+_DEFAULT_HEAD_SHIFT = -0.0127672
+_DEFAULT_HEIGHT = 1.62
+_DEFAULT_RATIO = 6.505
+_HEAD_RAW_LEN = 0.2344
+
+
+def _head_scale():
+    """头骨放大倍数，与 head.py:_head_scale 逐字同源。
+
+    为什么不能像旧版那样直接写死 1.063：`head_to_body_ratio` 是可调旋钮
+    （2026-11-03 从 6.505 改到 7.5，头骨放大倍数变成 0.9215）。旧版把
+    1.063 冻在 flatten_face 里，压平区的横向窗口还乘 1.063 = 82.9mm，
+    而新脸半宽只有 95.4mm —— 等于把整张脸压成一块平板，鼻子、颧骨、
+    下颌的明暗全部消失，z 范围也整体错位到下巴以下。必须跟着旋钮现算。
+    """
+    h = charparams.get("appearance.height", _DEFAULT_HEIGHT)
+    r = charparams.get("appearance.head_to_body_ratio", _DEFAULT_RATIO)
+    if h == _DEFAULT_HEIGHT and r == _DEFAULT_RATIO:
+        return _DEFAULT_HEAD_SCALE
+    if not (0.5 < r < 20.0) or not (h > 0.5):
+        return _DEFAULT_HEAD_SCALE
+    return max(0.6, min(1.6, (h / r) / _HEAD_RAW_LEN))
+
+
+def _head_shift():
+    """头部整体 z 平移，与 head.py:_head_shift 同源（让头顶恰好落在 height）。"""
+    h = charparams.get("appearance.height", _DEFAULT_HEIGHT)
+    r = charparams.get("appearance.head_to_body_ratio", _DEFAULT_RATIO)
+    if h == _DEFAULT_HEIGHT and r == _DEFAULT_RATIO:
+        return _DEFAULT_HEAD_SHIFT
+    return h - (_HEAD_ANCHOR + _HEAD_RAW_LEN * _head_scale())
 
 
 def _sz(z):
-    """A6 之前的绝对 z → 放大后头骨上的 z（见 head.py:sz 的推导）。"""
-    return _HEAD_ANCHOR + (z - _HEAD_ANCHOR) * _HEAD_SCALE + _HEAD_SHIFT
+    """A6 之前的绝对 z → 当前头骨上的 z（见 head.py:sz 的推导）。"""
+    return _HEAD_ANCHOR + (z - _HEAD_ANCHOR) * _head_scale() + _head_shift()
 
 
 # ---------------- 可注入的像素级默认值（T18 像素段） ----------------
@@ -398,28 +429,29 @@ def set_all():
     light_pos = round(max(mid_pos + 0.02, min(0.99, light_pos)), 6)
     if light_pos < mid_pos + 0.02 - 1e-9:
         light_pos = round(mid_pos + 0.02, 6)
-    skin = toon("skin", (0.96, 0.80, 0.72),
-                shadow=(0.485, 0.455, 0.625), mid=(0.752, 0.647, 0.664),
-                light=(0.97, 0.93, 0.88), pos=(0.0, mid_pos, light_pos),
+    skin = toon("skin", (1.00, 0.955, 0.970),
+                shadow=(0.660, 0.505, 0.560), mid=(0.930, 0.805, 0.840),
+                light=(1.0, 1.0, 1.0), pos=(0.0, mid_pos, light_pos),
                 face_bias=FACE_BIAS, nose_band=NOSE_BAND)
     return {
         "skin": skin,
         "sclera": toon("sclera", (0.98, 0.97, 0.98),
                        shadow=(0.60, 0.64, 0.78), mid=(0.88, 0.89, 0.93),
                        light=(1.0, 1.0, 1.0), pos=(0.0, 0.3, 0.55)),
-        "iris": toon("iris", (0.93, 0.55, 0.10),
-                     shadow=(0.32, 0.11, 0.02), mid=(0.80, 0.35, 0.03),
-                     light=(1.0, 0.72, 0.22), pos=(0.02, 0.45, 0.70),
+        # 紫罗兰虹膜（参考图 #C56C8E 上部偏紫、下部偏粉）
+        "iris": toon("iris", (1.0, 1.0, 1.0),
+                     shadow=(0.150, 0.050, 0.220), mid=(0.520, 0.200, 0.550),
+                     light=(0.950, 0.600, 0.850), pos=(0.02, 0.45, 0.70),
                      strength=1.15),
-        "iris_dark": flat("iris_dark", (0.22, 0.08, 0.02)),
+        "iris_dark": flat("iris_dark", (0.10, 0.03, 0.14)),
         "pupil": flat("pupil", (0.02, 0.015, 0.02)),
         "white_emit": flat("white_emit", (1, 1, 1), strength=2.4),
-        "lash": flat("lash", (0.10, 0.06, 0.09)),
-        "lash_soft": flat("lash_soft", (0.34, 0.16, 0.17)),
-        "brow": flat("brow", (0.24, 0.13, 0.10)),
-        "lip": toon("lip", (0.98, 0.44, 0.42),
-                    shadow=(0.55, 0.16, 0.20), mid=(0.90, 0.34, 0.34),
-                    light=(1.0, 0.62, 0.60), pos=(0.0, 0.4, 0.7)),
+        "lash": flat("lash", (0.10, 0.055, 0.085)),
+        "lash_soft": flat("lash_soft", (0.42, 0.20, 0.24)),
+        "brow": flat("brow", (0.36, 0.135, 0.190)),
+        "lip": toon("lip", (1.0, 1.0, 1.0),
+                    shadow=(0.700, 0.300, 0.380), mid=(0.930, 0.520, 0.580),
+                    light=(1.0, 0.780, 0.800), pos=(0.0, 0.4, 0.7)),
         "hair": hair_material(),
         "cloth_white": toon("cloth_white", (0.93, 0.93, 0.95),
                             shadow=(0.60, 0.63, 0.77), mid=(0.85, 0.86, 0.91),
@@ -430,15 +462,41 @@ def set_all():
     }
 
 
-def hair_material(name="hair",
-                  base=(0.115, 0.088, 0.105),
-                  shadow=(0.055, 0.050, 0.090),
-                  mid=(0.190, 0.150, 0.200),
-                  light=(0.430, 0.360, 0.395),
-                  ring=(0.060, 0.055, 0.075)):
-    """深棕黑发 + 天使环：在 z≈1.54 / 1.34 两道横向高光带。"""
+_HC_DEFAULT_LIGHT = (0.430, 0.360, 0.395)
+_HC_DEFAULT_SHADOW = (0.055, 0.050, 0.090)
+_HC_DEFAULT_RING = (0.060, 0.055, 0.075)
+
+
+def hair_material(name="hair", base=None,
+                  shadow=None, mid=None, light=None, ring=None):
+    """头发 toon + 天使环。
+
+    颜色口径（2026-11-03 改）：`hair.hair_color` / `hair.hair_shadow_color`
+    现在表示**渲染出来的亮面 / 暗面最终色**（线性 RGB），不再是内部乘法因子。
+    toon 骨架里 base 是 MULTIPLY，所以令 base = 亮面最终色、ramp 亮端 = 1，
+    暗端 = 暗面最终色 ÷ base —— 这样改一个参数就能直接对上参考图取色，
+    不用反推节点。
+
+    参考图（粉鲍伯）：亮 #FFC6D3 → (1.000, 0.565, 0.648)
+                     暗 #80455C → (0.216, 0.060, 0.107)
+    """
+    if base is None:
+        base = tuple(charparams.get("hair.hair_color", _HC_DEFAULT_LIGHT))
+    else:
+        base = tuple(base)
+    if light is None:
+        light = (1.0, 1.0, 1.0)
+    if shadow is None:
+        sc = tuple(charparams.get("hair.hair_shadow_color", _HC_DEFAULT_SHADOW))
+        shadow = tuple(min(1.0, sc[i] / max(base[i], 1e-3)) for i in range(3))
+    if mid is None:
+        sc = tuple(charparams.get("hair.hair_shadow_color", _HC_DEFAULT_SHADOW))
+        mc = [0.55 * base[i] + 0.45 * sc[i] for i in range(3)]
+        mid = tuple(min(1.0, mc[i] / max(base[i], 1e-3)) for i in range(3))
+    if ring is None:
+        ring = tuple(charparams.get("hair.hair_ring_color", _HC_DEFAULT_RING))
     mat = toon(name, base, shadow=shadow, mid=mid, light=light,
-               pos=(0.0, 0.34, 0.62), strength=1.0)
+               pos=(0.0, 0.56, 0.86), strength=1.0)
     nt = mat.node_tree
     links = nt.links
     em = nt.nodes["Emission"]
@@ -560,9 +618,9 @@ def flatten_face(ob, x_half=0.078, z0=(1.398, 1.425), z1=(1.575, 1.600),
     """
     z0 = (_sz(z0[0]), _sz(z0[1]))
     z1 = (_sz(z1[0]), _sz(z1[1]))
-    x_half = x_half * _HEAD_SCALE
-    y_front = y_front * _HEAD_SCALE
-    blend = blend * _HEAD_SCALE
+    x_half = x_half * _head_scale()
+    y_front = y_front * _head_scale()
+    blend = blend * _head_scale()
     nose_z = _sz(1.456)
 
     me = ob.data

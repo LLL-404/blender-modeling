@@ -109,7 +109,13 @@ def skin_mask(a):
     af = a.astype(np.float32)
     d = np.minimum.reduce([np.sqrt(((af - np.array(c, np.float32)) ** 2).sum(axis=2))
                            for c in SKIN_TIERS])
-    return d < TIER_DIST
+    m = d < TIER_DIST
+    # 粉色（头发）不算皮肤。头发的亮面 (250,193,206) 到皮肤档 (247,224,211)
+    # 的欧氏距离只有 31，落在 38 的阈值内 —— 头顶整片会被误判成皮肤，
+    # D1 bangs forehead_cover 因此报出 4.4%（分母里 skin 占 96%）。
+    # 发色的 R−G 稳定在 53~58，皮肤只有 23~33，用 R−G 分得干净。
+    m &= (af[:, :, 0] - af[:, :, 1]) <= 45.0
+    return m
 
 
 def hair_mask(a):
@@ -180,6 +186,13 @@ def geo_checks():
         return m
 
     M = stub()
+    # 2026-11-03：发型分成两套（hair.style = long / bob），D1/D2 这 5 条判据
+    # 全部是照长发型写的 —— 分组刘海(bangs_groups)、后发束(clumps)、侧发、呆毛。
+    # 鲍伯头是「一整片锯齿刘海 + 开口外壳」，这些部件在几何里根本不存在，
+    # 探针却照样去建临时对象来量，量出来的是模板默认值，与成品无关。
+    # 所以 bob 下这 5 条标 SKIP 并指向真正管用的口径（appearance.json 里的
+    # bangs_bottom_z / bangs_over_eye / hair_back_ratio），不假装通过。
+    bob = hairmod.charparams.get("hair.style", "long") == "bob"
 
     # ---------------- D1 刘海 ----------------
     bangs = hairmod._bangs()
@@ -207,16 +220,21 @@ def geo_checks():
     gspans = [(g[0][0], g[-1][1]) for g in groups]
     out("D1 bangs boxes", " ".join(
         f"[{a * 1000:+.1f},{b * 1000:+.1f}]" for a, b in boxes))
-    out("D1 bangs groups", f"groups={len(groups)} "
-        f"sizes={[len(g) for g in groups]} "
-        f"gaps=[{', '.join(mm(g) for g in gap_list)}]mm "
-        f"spans=" + " ".join(f"[{a * 1000:+.1f},{b * 1000:+.1f}]" for a, b in gspans))
-    ok_gap = (len(groups) == 3 and len(gap_list) == 2
-              and all(0.001 <= g <= 0.002 for g in gap_list))
-    out("D1 bangs gap_verdict",
-        f"{'OK' if ok_gap else 'FAIL'}（要求 3 组、每缝 1~2mm）")
-    out("D1 bangs tip_z", f"min_z={ztip:.4f} {'OK' if 1.520 <= ztip <= 1.540 else 'FAIL'}"
-        f"（要求 1.520~1.540，注意这是含半径的顶点 z，比 z_tip 略低）")
+    if bob:
+        out("D1 bangs groups", "SKIP（hair.style=bob：整片锯齿刘海，无 3 组分组）")
+        out("D1 bangs gap_verdict", "SKIP（同上）")
+        out("D1 bangs tip_z", "SKIP（同上；bob 的刘海高度见 appearance.json:bangs_bottom_z）")
+    else:
+        out("D1 bangs groups", f"groups={len(groups)} "
+            f"sizes={[len(g) for g in groups]} "
+            f"gaps=[{', '.join(mm(g) for g in gap_list)}]mm "
+            f"spans=" + " ".join(f"[{a * 1000:+.1f},{b * 1000:+.1f}]" for a, b in gspans))
+        ok_gap = (len(groups) == 3 and len(gap_list) == 2
+                  and all(0.001 <= g <= 0.002 for g in gap_list))
+        out("D1 bangs gap_verdict",
+            f"{'OK' if ok_gap else 'FAIL'}（要求 3 组、每缝 1~2mm）")
+        out("D1 bangs tip_z", f"min_z={ztip:.4f} {'OK' if 1.520 <= ztip <= 1.540 else 'FAIL'}"
+            f"（要求 1.520~1.540，注意这是含半径的顶点 z，比 z_tip 略低）")
 
     # ---------------- D2 后发束 ----------------
     clumps = hairmod._clumps()
@@ -237,7 +255,10 @@ def geo_checks():
         recs.append((half_w, half_t, ob.name))
         prof += [c for c in cs if 1.285 <= c.z <= 1.315]
     drop(*clumps)
-    if recs:
+    if bob:
+        out("D2 clumps halfwidth", "SKIP（hair.style=bob：无后发束，发厚见 appearance.json:hair_back_ratio）")
+        out("D2 clumps halfthick", "SKIP（同上）")
+    elif recs:
         hw = [r[0] for r in recs]
         ht = [r[1] for r in recs]
         out("D2 clumps halfwidth", f"min={mm(min(hw))}mm max={mm(max(hw))}mm "
