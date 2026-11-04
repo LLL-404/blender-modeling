@@ -44,8 +44,14 @@ for ob in (h, b, bpy.data.objects.get("Hands"), hair):
         _ol_mods.append(look.add_outline(ob, OL, thickness=0.008))
 
 
+# 2026-11-04：与 m5_rig 同步 —— hair card 是薄壳片，3.5px 描边会把卡片缝隙
+# 挤成黑色裂纹，Hair 单独收细到 1.4px。
+_OL_PX = {"Hair": 1.4}
+
+
 def _set_outline(ortho, res_y):
-    look.set_outline_px(_ol_objs, _ol_mods, ortho, res_y, base_px=3.5)
+    look.set_outline_px(_ol_objs, _ol_mods, ortho, res_y, base_px=3.5,
+                        per_obj_px=_OL_PX)
 
 
 look.bloom(threshold=0.88, size=8)

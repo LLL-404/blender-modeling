@@ -10,7 +10,7 @@ from mathutils.bvhtree import BVHTree
 import cfg
 import charparams
 from meshkit import (superellipse_ring, loft, resample, join, shade_smooth,
-                     mesh_from)
+                     mesh_from, select_only)
 
 
 # ---------------- A6：头身比 6.95 → 6.50 ----------------
@@ -149,11 +149,137 @@ def eye_size():
     return charparams.get("appearance.eye_size_scale", _DEFAULT_EYE_SIZE_SCALE)
 
 
-def head_base():
-    rows = resample(head_rows(), "z", 0.004)
-    rings = [superellipse_ring(z, rx, ryf, cy, 0.0, p, cfg.RING_SEG, ry_back=ryb)
+# ---------------- 控制笼 + Catmull-Clark（2026-11-04 换表示法，路线 2）----------------
+# 原实现：resample(..., 0.004) → 59 环 × 48 段 = 2832 quads 的高密度放样壳。
+# 曲率靠堆密度换，但**没有可编辑的拓扑结构**——眼窝、下颌转折、鼻根这些地方
+# 根本没有环线支撑，只能在光滑壳上贴 0.4mm 薄片假装。
+#
+# 换成：稀疏控制笼（约 14 环 × 24 段 = 336 quads）+ SUBSURF 2 级。
+# 两个理由，都不是「看起来更高级」：
+#   1. Catmull-Clark 的极限曲面除奇异点外是 C2，折痕在数学上不存在；
+#      三渲二是硬分档，法线一断就渲成棱，这个改动直接消掉那一类锯齿。
+#   2. 控制笼只有 ~338 个顶点。后面加「解剖锚点位移」时，在 338 个顶点上做
+#      是改结构，在 2834 个顶点上做只是加噪声 —— 这是能不能做出眼窝的前提。
+#
+# CAGE_GROW_X/Y 是细分收缩的补偿：Catmull-Clark 会把控制笼往内收。
+# 这两个数由 `blender -b --python scripts/probe_cage.py` 实测给出，不是拍脑袋：
+#   未补偿时 SUBD/BASE 的跨度比 = x 0.98596 / y 0.97735 / z 1.00001
+#   → 补偿系数取倒数（z 不缩，不动）
+# 按轴分开是因为超椭圆环的 x、y 半轴曲率不同，收缩量本来就不同；用一个笼统的
+# 1.0232 会把头宽多放大 0.9%（约 1.6mm），「头宽/头长」是 hard 判据，不能糊。
+CAGE_STEP = 0.018          # 控制笼环距（m）；头高 0.234 → 约 14 环
+CAGE_SEG = 24              # 控制笼每圈段数（原 cfg.RING_SEG = 48）
+CAGE_SUBDIV = 2            # Catmull-Clark 级数
+CAGE_GROW_X = 1.01424      # = 1 / 0.98596
+CAGE_GROW_Y = 1.02318      # = 1 / 0.97735
+
+
+def head_cage():
+    """稀疏控制笼。形状仍由 HEAD 表决定，只是采样点变少。"""
+    rows = resample(head_rows(), "z", CAGE_STEP)
+    rings = [superellipse_ring(z, rx * CAGE_GROW_X, ryf * CAGE_GROW_Y,
+                               cy * CAGE_GROW_Y, 0.0, p, CAGE_SEG,
+                               ry_back=ryb * CAGE_GROW_Y)
              for z, rx, ryf, ryb, cy, p in rows]
     return loft(rings, name="head")
+
+
+def subdivide(ob, levels=CAGE_SUBDIV):
+    """控制笼 → Catmull-Clark 极限曲面，直接 apply 成实体网格。
+
+    为什么 apply 而不是留修改器：后续 `sculpt()` 要按顶点坐标做高斯位移、
+    `conform()` 要拿 BVH 把五官贴片投到真实表面；留修改器会让这两步读到
+    未细分的笼面，投出来的位置全错。
+    """
+    m = ob.modifiers.new("cage_subdiv", 'SUBSURF')
+    m.subdivision_type = 'CATMULL_CLARK'
+    m.levels = levels
+    m.render_levels = levels
+    m.use_limit_surface = True
+    select_only(ob)
+    bpy.ops.object.modifier_apply(modifier=m.name)
+    return ob
+
+
+def _band(t, lo, hi, soft=12.0):
+    """[lo,hi] 内为 1，两侧各 soft 度内 smoothstep 衰减到 0。"""
+    if t < lo - soft or t > hi + soft:
+        return 0.0
+    if lo <= t <= hi:
+        return 1.0
+    u = (t - (lo - soft)) / soft if t < lo else ((hi + soft) - t) / soft
+    return u * u * (3.0 - 2.0 * u)
+
+
+def cage_sculpt(ob):
+    """控制笼级解剖位移（路线 2 步骤 B，2026-11-04）。
+
+    为什么必须在控制笼上做
+    --------------------
+    细分后的 5186 个顶点上做高斯位移，得到的是局部「鼓包」——形状变了，结构没变。
+    在 314 个控制顶点上移一个点，细分后是整片区域平滑过渡的「转折」。
+    这就是换表示法的全部意义：**可编辑的拓扑**，不是更密的网格。
+
+    只在有明确解剖对应的位置动，每一条都写清对应脸上的哪条线：
+      · 下颌角：耳垂下方，把侧后方半径收进去，形成「耳 → 下巴」那条斜边。
+        二次元脸的辨识度一半在这条边上，而放样壳天生是椭圆，没有这个角。
+      · 下巴：最下一环前推 + 下压，做出下巴尖。
+      · 颧骨：侧前方外扩，给眼睛下方一点支撑。
+      · 眉弓：眼上方前推，让眼窝有上沿。
+    位移量按「脸上能量出来的毫米数」给，不按「看起来差不多」调。
+    """
+    me = ob.data
+    zs = sorted({round(v.co.z, 5) for v in me.vertices})
+
+    def row(target, tol=0.012):
+        best = min(zs, key=lambda q: abs(q - target))
+        return best if abs(best - target) <= tol else None
+
+    z_chin = row(sz(1.4040))
+    z_jaw = row(sz(1.4400))
+    z_cheek = row(sz(1.4720))
+    z_brow = row(sz(1.5240))
+
+    for v in me.vertices:
+        x, y, z = v.co
+        r = math.hypot(x, y)
+        if r < 1e-6:
+            continue
+        zr = round(z, 5)
+        # 到正面的角距离：0 = 正前，90 = 侧面，180 = 正后
+        da = abs(((math.degrees(math.atan2(y, x)) + 90.0 + 180.0) % 360.0) - 180.0)
+
+        if zr == z_jaw and _band(da, 52.0, 98.0) > 0.0:
+            # 下颌角：沿半径内收 3.2mm。只动侧后方，正面宽度不变。
+            k = 0.0032 * _band(da, 52.0, 98.0)
+            v.co.x -= k * x / r
+            v.co.y -= k * y / r
+
+        if zr == z_chin and _band(da, 0.0, 38.0, soft=14.0) > 0.0:
+            # 下巴：前推 4.5mm、下压 2.0mm。正面中线最强，向两侧衰减。
+            k = _band(da, 0.0, 38.0, soft=14.0)
+            v.co.y -= 0.0045 * k
+            v.co.z -= 0.0020 * k
+
+        if zr == z_cheek and _band(da, 28.0, 76.0) > 0.0:
+            # 颧骨：沿半径外扩 2.2mm，给眼下一点支撑。
+            k = 0.0022 * _band(da, 28.0, 76.0)
+            v.co.x += k * x / r
+            v.co.y += k * y / r
+
+        if zr == z_brow and _band(da, 0.0, 46.0, soft=16.0) > 0.0:
+            # 眉弓：前推 1.6mm，让眼窝有上沿。
+            v.co.y -= 0.0016 * _band(da, 0.0, 46.0, soft=16.0)
+
+    me.update()
+    print("[cage] 解剖位移：chin=%s jaw=%s cheek=%s brow=%s" % (
+        z_chin, z_jaw, z_cheek, z_brow))
+
+
+def head_base():
+    cage = head_cage()
+    cage_sculpt(cage)
+    return subdivide(cage)
 
 
 def g(d, s=1.0):

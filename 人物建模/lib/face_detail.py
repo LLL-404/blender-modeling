@@ -149,18 +149,20 @@ def build(mats, bvh):
               lift=0.0032, scale=0.88) for i in range(13)],
          0.00055, soft, "puff", mirror=True)
 
-    # ---- 虹膜：9 条放射纹 + 上半圈虹膜缘（不闭合，避免「钟表」感）----
+    # ---- 虹膜：上缘深弧 + 下缘浅弧 ----
+    # 2026-11-04：原版是 9 条放射纹 + 上半圈整环 rim，正面渲成「齿轮 / 钟表」，
+    # 是全图第二刺眼的地方。参考图的二次元虹膜是「上深下浅的渐变 + 一个高光点」，
+    # 没有任何放射状黑线 —— 那 9 条线是为了把 face_edge_density 刷过线加的，
+    # 属于刷指标，和脸颊排线同一类错误。
+    # 改成：上缘一道深弧（眼睑投影）+ 下缘一道浅弧（虹膜底边），中间留出渐变；
+    # 高光由 eye() 里的实体圆提供，不在这里画。
     icz = ez + 0.0022
-    for j in range(9):
-        a = 2.0 * math.pi * (j + 0.18 * math.sin(j * 2.7)) / 9.0 + 0.12
-        r0, r1 = 0.0068 + 0.0005 * math.sin(j * 3.1), 0.0118
-        _add(out, bvh, "eye",
-             [(ex + r0 * math.cos(a), icz + r0 * math.sin(a)),
-              (ex + r1 * math.cos(a), icz + r1 * math.sin(a))],
-             0.00060, iris_dark, "irisline%02d" % j, mirror=True)
     _add(out, bvh, "eye",
-         _arc(ex, icz, 0.0124, 0.0124, 0.12, math.pi - 0.12, 15),
-         0.00070, iris_dark, "irisrim", mirror=True)
+         _arc(ex, icz, 0.0122, 0.0122, 0.10, math.pi - 0.10, 15),
+         0.00078, iris_dark, "iris_top", mirror=True)
+    _add(out, bvh, "eye",
+         _arc(ex, icz, 0.0116, 0.0116, math.pi * 1.12, math.pi * 1.90, 9),
+         0.00055, soft, "iris_bottom", mirror=True)
 
     # ---- 眉丝 5 条连续线 ----
     z0 = sz(1.5300)
@@ -175,18 +177,19 @@ def build(mats, bvh):
         _add(out, bvh, "skin", pts, 0.00050, brow,
              "browfiber%d" % j, mirror=True)
 
-    # ---- 鼻：2 条连续侧影 + 2 个鼻孔点（不要横段梯子）----
-    for j, dx in enumerate((0.0054, 0.0070)):
-        pts = []
-        for i in range(9):
-            t = i / 8.0
-            pts.append((dx + 0.0014 * t,
-                        sz(1.4870) + (sz(1.4570) - sz(1.4870)) * t))
-        _add(out, bvh, "skin", pts, 0.00055, soft,
-             "noseshade%d" % j, mirror=True)
+    # ---- 鼻：一条鼻侧影 + 一个鼻孔短弧 ----
+    # 2026-11-04：原版是 2 条平行竖线 + 2 个小方块鼻孔，正面读成「两竖 + 两方块」，
+    # 是全图第三刺眼的地方。参考图的鼻子只有鼻梁一侧一道很淡的影 + 鼻底一点暗。
+    # 改成一条带弧度的侧影（鼻根起、向鼻翼收）+ 一个短弧鼻孔。
+    pts = []
+    for i in range(11):
+        t = i / 10.0
+        pts.append((0.0046 + 0.0030 * t - 0.0018 * math.sin(math.pi * t),
+                    sz(1.4890) + (sz(1.4510) - sz(1.4890)) * t))
+    _add(out, bvh, "skin", pts, 0.00050, soft, "noseshade", mirror=True)
     _add(out, bvh, "skin",
-         [(0.0052, sz(1.4495)), (0.0072, sz(1.4498))],
-         0.00090, dark, "nostril", mirror=True)
+         _arc(0.0062, sz(1.4490), 0.0022, 0.0014, -0.2, math.pi + 0.2, 7),
+         0.00055, dark, "nostril", mirror=True)
 
     # ---- 嘴：上唇曲线 / 下唇曲线 / 唇下影，各一条 ----
     mz = sz(1.4305)

@@ -48,6 +48,10 @@ cloth = outfitmod.build(M)
 # 腕口与前臂几乎同宽，1.85/900 机位下 3.5px = 7.19mm/侧的壳会戳出前臂轮廓。
 OL = look.outline_mat()
 _OL_CAP = {"Hands": look.HAND_OUTLINE_CAP}
+# 2026-11-04：Hair 单独收细描边。hair card 是 25 张薄壳片，3.5px 的描边壳会在
+# 卡片缝隙之间互相挤满，渲成一条条黑色裂纹（out/visual_front.png 头顶、发际线）。
+# 细到 1.4px 后缝隙能透出头发底色，外轮廓仍有黑边，风格不变。
+_OL_PX = {"Hair": 1.4}
 _ol_objs, _ol_mods = [], []
 for ob in (h, b, bpy.data.objects.get("Hands"), hair, cloth):
     if ob is not None:
@@ -58,7 +62,7 @@ for ob in (h, b, bpy.data.objects.get("Hands"), hair, cloth):
 
 def _set_outline(ortho, res_y):
     look.set_outline_px(_ol_objs, _ol_mods, ortho, res_y, base_px=3.5,
-                        per_obj_cap=_OL_CAP)
+                        per_obj_px=_OL_PX, per_obj_cap=_OL_CAP)
 
 arm = rig.build_armature()
 # B1：Body 与 Outfit 都用分带权重（z<1.05 的臀/髋/裙区不许手臂骨主导）
