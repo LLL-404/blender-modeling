@@ -172,6 +172,30 @@ def blend_widths(n, root_w, mid_w, tip_w, root_frac=0.12, tip_frac=0.25):
     return w
 
 
+def layered_widths(n, root_w, mid_w, tip_w, phase=0.0, waves=2.0,
+                   ripple=0.30, root_frac=0.18, tip_frac=0.22):
+    """宽度剖面 + 沿长度的**非周期**粗细起伏，给分层发束用。
+
+    `blend_widths` 是单峰（根细→中宽→梢尖）：每张卡都长一个样，等距排一圈
+    就是「罗纹灯罩」。真实发束一绺之内也有粗细变化，而且各绺的鼓起位置不
+    对齐。这里叠两个频率互质（1 : 1.618）的正弦，相位由调用者逐张给，
+    根/梢用 sin 包络压住，保证收尖与藏根不被破坏。
+
+    phase 必须由**无周期的伪随机序列**给（黄金角 sin），不能用 k/N 之类
+    等差相位，否则又造出一个新的周期，视觉闸门照样能测出来。
+    """
+    base = blend_widths(n, root_w, mid_w, tip_w, root_frac, tip_frac)
+    out = []
+    for i, w in enumerate(base):
+        t = i / max(1, n - 1)
+        r = (0.5 * math.sin(2.0 * math.pi * waves * t + phase)
+             + 0.5 * math.sin(2.0 * math.pi * (waves * 1.618 + 0.37) * t
+                              + phase * 1.7 + 1.1))
+        env = math.sin(math.pi * t) ** 0.8
+        out.append(max(1e-4, w * (1.0 + ripple * env * r)))
+    return out
+
+
 def blend_thicks(n, root_t, tip_t):
     """厚度序列：根部厚、末端薄。"""
     return [root_t + (tip_t - root_t) * (i / max(1, n - 1)) for i in range(n)]

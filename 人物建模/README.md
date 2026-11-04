@@ -27,6 +27,8 @@ python scripts/build.py asset                   # E1+E2 UV/四边 → E3 贴图/
 python scripts/build.py check                   # 6 个探针自检，报告写 opt/logs/check_report.md
 python scripts/build.py measure                 # 外观 spec 体检：实测 vs 目标（只读 美女.blend）
 python scripts/brief.py briefs/example.json     # brief → profile 受控补丁（dry-run，默认不写盘）
+python scripts/visual_gate.py                   # 视觉闸门：当前渲染 vs 参考图 → out/visual_gate.json
+python scripts/deliver.py                       # 一句话：进游戏 / 进作品集，现在行不行
 ```
 
 单步重建（任一非 0 立即停止并转发退出码）：
@@ -38,6 +40,38 @@ python scripts/build.py body|head|look|hair|outfit|rig|asset
 - Blender 不存在时 `build.py` 打印中文提示并 **exit 2**，不会静默失败。
 - `rig` 会写项目根的 `美女.blend`，并跑 B4 回归断言（4 张姿势图 + 权重和 + 关键骨位移）。
 - 构建不依赖当前目录：各入口与 `lib/shots.py:10` 的输出路径都由 `__file__` 推导；`build.py` 仍把 `cwd` 固定为项目根以统一行为。
+
+## 视觉闸门（2026-11-04 根因复盘产物）
+
+`spec/reference.json` 的 14 条 spec 全是宏观比例，**没有一条**量五官、发丝或材质层次；
+A2/C 两个探针是纯信息探针（`PASS=0 SKIP=14` / `PASS=0 SKIP=35`）；16 机位只判「有没有拍出来」。
+三者合起来导致「71 PASS / 13 PASS / 0 FAIL」与「模型是一顶灯罩」同时成立 ——
+参考图只在开工当天被看了一眼，之后再没进过任何判据。
+
+| 项 | 值 |
+|---|---|
+| 参考图 | `spec/reference/1000139587.jpg`（已入仓，原先只在剪贴板临时目录） |
+| 当前渲染 | `out/visual_front.png`，固定 `m5_face_front` 机位，比 `美女.blend` 旧时自动重渲染 |
+| 归一化 | 两张图各自按「粉色头发」包围盒裁切 → 统一缩放到 512 宽，否则 Canny/FFT 不可比 |
+| 判据 | 头发明暗层次 ≥ 参考×0.60；条纹周期性 ≤ 参考×1.80；脸部细节密度 ≥ 参考×0.60 |
+| 脸窗 | 头发包围盒高度 `[30%, 70%]`（眼睛 → 嘴角）。原 `[45%, 85%]` 把眼睛整个排除在外，逼得建模侧往脸颊加规则排线凑密度、渲成栅栏；2026-11-04 修正并重校准基线 |
+| 基线 | 由参考图自身算出（`--calibrate`）；阈值由参考图 + 明确坏例共同定，禁止照当前模型反调 |
+
+```bash
+python scripts/visual_gate.py --calibrate   # 换参考图后才需要
+python scripts/visual_gate.py --selftest    # 负控制：原图全 PASS、抹平细节的退化图 ≥2 FAIL
+python scripts/visual_gate.py               # 判定 → out/visual_gate.json
+```
+
+**边界**：量的是画面信息密度，是「像不像」的必要非充分条件。过闸门不代表像；
+不过闸门说明连细节密度都远低于参考。它已接进 `deliver.py` 的 portfolio 硬闸门。
+当前模型实测 **PASS 3 / FAIL 0**：明暗 `0.4784 ≥ 0.3224`、条纹 `0.0714 ≤ 0.1382`、
+脸密度 `0.0839 ≥ 0.0795`。
+
+**人眼复核仍不合格**（闸门全过 ≠ 像）：头顶黑色裂纹与菱形锯齿、放射纹圆盘眼
+（钟表感）、方块鼻 + 两条长影线、没有耳朵与下颌实体、发束是粗叶片而非细密发丝。
+这些是 `lib/head.py` / `lib/hair.py` 表示法的天花板，加线、调参都盖不住，
+需要换几何表示法。详见 [CHANGELOG.md](CHANGELOG.md) v0.13.0。
 
 ## Brief 入口（结构化 brief → 受控参数）
 
@@ -61,7 +95,7 @@ python scripts/brief.py briefs/example.json --apply --run  # 写盘后跑 build/
 python scripts/brief.py --selftest                   # 14 项校验/写盘/验证链测试，不碰真实 profile
 ```
 
-`--run` 默认把 `build.py all` 和 `measure.py` 当 blocking（失败即停），`build.py check` 与 `audit.py --fast` 当 advisory（记录但不阻断，因为当前有已知 R4/面数/非流形 FAIL）；`--strict` 可把 advisory 也升级为失败。`asset`/`deliver` 只在需要资产和交付时单独跑。
+`--run` 默认把 `build.py all` 和 `measure.py` 当 blocking（失败即停），`build.py check` 与 `audit.py --fast` 当 advisory（记录但不阻断，因为仍有已登记的 R4 屈指 FAIL；面数与非流形已于 2026-11-04 修好）；`--strict` 可把 advisory 也升级为失败。`asset`/`deliver` 只在需要资产和交付时单独跑。
 
 注意：`build.py all` 最后一步会 `save_as_mainfile` 重写 `美女.blend`。只想校验 brief 参数时不要带 `--run`；确需全链验证时，先确认当前 `.blend` 可重建或已有备份。
 
@@ -325,6 +359,9 @@ blender -b --factory-startup --python opt/eval_geom.py -- --use-best
    引擎侧要用后处理描边。AO 单独落 `out/tex_*_ao.png`，glb 只带 albedo。
 6. **PBR 观感比三渲二浅**：同一张 albedo 在三点光 PBR 下头发偏灰棕（三渲二为深棕近黑），属光照/粗糙度差异，
    不是贴图错误。回读时 glTF 导入器还会多生成一个 42v/80f 的 `Icosphere` 骨骼辅助网格（不在 glb 内）。
+7. **视觉闸门全过，但人眼看仍不像参考图**：头顶破面/菱形锯齿、钟表眼、方块鼻、无耳无下颌、
+   粗叶片发束。闸门只量画面信息密度，不量「像」。这是 `lib/head.py` / `lib/hair.py`
+   表示法的天花板，换几何表示法才能解；详见 [CHANGELOG.md](CHANGELOG.md) v0.13.0。
 
 ## 依赖与版本
 

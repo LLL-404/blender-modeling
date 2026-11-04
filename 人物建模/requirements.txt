@@ -5,5 +5,8 @@
 #
 # 安装：python -m pip install -r requirements.txt
 # 本机实测可用版本（2026-11-01）：numpy 2.4.4、Pillow 11.3.0、Python 3.14.4
+# 2026-11-04 补 opencv-python 4.12.0：只给 scripts/visual_gate.py 用（中文路径图像读写、
+# HSV 分割、Canny、FFT 频带）。其余脚本不依赖它。
 numpy>=1.24
 Pillow>=9.5
+opencv-python>=4.8

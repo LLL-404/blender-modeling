@@ -1,0 +1,77 @@
+{
+  "_note": "视觉闸门配置。2026-11-04 根因复盘产物：原工程 14 条外观 spec 全是宏观比例，没有任何一条量五官/发丝/材质层次，导致「71 PASS」与「模型是灯罩」同时成立。本表登记参考图、可比特征、以及从参考图自身校准出的基线。改这里不用改代码。",
+  "_boundary": "这些特征量的是「画面信息密度」，不是「像不像」的充分条件。过闸门 ≠ 像；不过闸门 = 连细节密度都远低于参考，一定不够格。它的职责是拦住明显糊弄的产出，不冒充审美评分。真正像不像仍需人眼看渲染图。",
+  "_calibrate": "基线必须由参考图自身算出：python scripts/visual_gate.py --calibrate。禁止照着当前模型的数值反调阈值 —— 那等于把闸门改成橡皮图章。",
+  "_selftest": "python scripts/visual_gate.py --selftest —— 参考图自己必须全 PASS，把头发与脸部细节抹平后的退化图必须至少 2 项 FAIL（共 3 条判据）。两项都成立才说明判据有判别力。",
+  "_normalization": "两张图各自按「粉色头发」包围盒裁切后统一缩放到 512 宽再算特征。参考图 1600×1600、渲染 620×780，不归一化 Canny 密度与 FFT 频带都不可比。",
+  "_face_window": "脸部窗口按头发包围盒高度取 [30%, 70%]，覆盖眼睛到嘴角（常量 FACE_TOP/FACE_BOTTOM 在 scripts/visual_gate.py）。2026-11-04 从 [45%, 85%] 修正：旧窗口把眼睛整个排除，判据只量眼下到下巴，逼得建模侧往脸颊加规则排线凑密度、渲成栅栏，属刷指标。改窗口后必须重跑 --calibrate 与 --selftest；当前基线 face_edge_density=0.132528 就是新窗口算出来的。",
+  "_human_review": "闸门只量画面信息密度，不量像不像。2026-11-04 人眼复核：头顶破面/菱形锯齿、放射纹圆盘眼、方块鼻、无耳无下颌、粗叶片发束仍在。过闸门 ≠ 像，这些是几何表示法的天花板。",
+  "_rejected_features": "试过但删掉的：头发内边缘密度、局部梯度、发梢起伏 std、FFT 主峰周期。原因：当前模型的黑色描边壳会制造大量边缘和梯度，破面也会制造发梢起伏，这些量分不清「细密发丝」和「18 条黑沟槽」；FFT 主峰周期被大尺度明暗主导（参考 171px vs 当前 64px，方向与直觉相反）。它们仍作为 diagnostic_only 输出，不参与判定。",
+  "reference_image": "spec/reference/1000139587.jpg",
+  "render_image": "out/visual_front.png",
+  "render_producer": "scripts/render_visual_front.py",
+  "report": "out/visual_gate.json",
+  "limits": {
+    "lower_ratio": 0.6,
+    "stripe_max_ratio": 1.8,
+    "_why": "下界型特征允许参考值的 0.60 倍；等距条纹特征只有上界，超过参考 1.8 倍判 FAIL。0.60 的来历：初版 0.45 太宽，连「头发/脸部被抹平」的负控制图都能过（tone_span 0.504、face_edge 0.432 都判 PASS），按负控制收紧到 0.60 后两项都 FAIL。阈值由参考图 + 明确的坏例共同定，不是照当前模型反调。"
+  },
+  "features": [
+    {
+      "key": "hair_tone_span",
+      "label": "头发明暗层次（排除描边黑线）",
+      "mode": "min",
+      "why": "参考图有高光带与暗部渐变；一整块均匀粉色 = 塑料"
+    },
+    {
+      "key": "hair_stripe_peak",
+      "label": "头发水平条纹周期性主峰占比",
+      "mode": "max",
+      "ratio": 1.8,
+      "why": "等距卡片在每条扫描线上产生同一周期 → 灯罩/南瓜纹；真实发束间距不齐，能量摊开"
+    },
+    {
+      "key": "face_edge_density",
+      "label": "脸部特征边缘密度",
+      "mode": "min",
+      "why": "眼睑/睫毛/瞳仁/唇线；平板脸只有两个圈一条线"
+    }
+  ],
+  "baseline": {
+    "hair_tone_span": 0.537255,
+    "hair_stripe_peak": 0.076785,
+    "face_edge_density": 0.132528
+  },
+  "_calibrated_at": "2026-11-04 22:04:35",
+  "_calibrated_from": {
+    "image": "spec/reference/1000139587.jpg",
+    "size": [
+      1600,
+      1600
+    ],
+    "hair_pixels": 210744,
+    "hair_bbox": [
+      517,
+      98,
+      1114,
+      723
+    ],
+    "normalized": [
+      512,
+      534
+    ],
+    "face_window": [
+      154,
+      170,
+      358,
+      366
+    ],
+    "diagnostic_only": {
+      "_why": "这三个量不参与判定：粗黑描边会制造大量边缘/梯度，FFT 主峰周期被大尺度明暗主导，分不清「细发丝」与「黑沟槽」。留着供人工复核。",
+      "hair_stripe_period_px": 170.667,
+      "hair_local_contrast": 0.306725,
+      "hair_edge_density": 0.158364,
+      "outline_black_pixels_excluded": 0.0
+    }
+  }
+}

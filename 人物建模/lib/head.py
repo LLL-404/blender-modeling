@@ -448,6 +448,20 @@ def build(mats):
         parts.append(eye(s, mats, bvh))
         parts.append(brow(s, mats, bvh))
         parts.append(ear(s, mats))
+    # 2026-11-04：补二次元线稿（睫毛分根/虹膜纹/眉丝/鼻影/唇线/腮红/下颌）。
+    # 原来只有「两个圈 + 一个点 + 一条线」，视觉闸门量到脸窗边缘密度 0.034，
+    # 参考图 0.126。
+    #
+    # **不并入 Head**：描边是靠 Solidify 反法线外扩实现的，0.5~0.8mm 的细线
+    # 外扩 3.5px 后整条被黑壳吞掉，实测渲成「蜘蛛网 + 梯子 + 缝线 + 方框」
+    # （out/visual_front.png 两版迭代）。线稿单独成 FaceLines 对象，各 m2~m5
+    # 脚本的描边只挂在 (Head, Body, Hands, Hair) 上，它天然没有描边，露出
+    # 材质本色。m6_export 按 5 个主网格白名单导出，FaceLines 不进 glb ——
+    # 游戏侧细节由贴图承担，这里只服务 DCC 观感与视觉闸门。
+    import face_detail
+    lines = face_detail.build(mats, bvh)
     head = join(parts, "Head")
     shade_smooth(head)
+    if lines:
+        join(lines, "FaceLines")
     return head

@@ -7,7 +7,8 @@
 
 | 入口 | 产物 | 判什么 |
 |---|---|---|
-| `build.py measure` | `out/appearance_report.json` | 像不像参考图 |
+| `build.py measure` | `out/appearance_report.json` | 14 条宏观比例（**不判像不像**） |
+| `scripts/visual_gate.py` | `out/visual_gate.json` | 画面信息密度对参考图的下限 |
 | `build.py asset` | `out/m6_16_stats.json` | 16 机位渲染有没有硬伤 |
 | `scripts/audit.py` | `out/audit.json` | 能不能进引擎 |
 | `build.py check` | `opt/logs/check_report.md` | 绑定有没有坏 |
@@ -80,7 +81,14 @@ _DETAIL_RE = re.compile(r"^\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|\s*`(.+?)`\s*\|\s*$", 
 
 
 def parse_rig(path):
-    """解析 check.py 的 markdown 报告：合计行 + FAIL 明细 + CRASH。"""
+    """解析 check.py 的 markdown 报告：合计行 + FAIL 明细 + CRASH + 验收覆盖空洞。
+
+    2026-11-04 根因复盘：A2 面部/头身比与 C 三渲二两个探针是纯信息探针，
+    实测 PASS=0 SKIP=14 / PASS=0 SKIP=35，一条判定都没有。原版只读
+    PASS/FAIL/CRASH，于是合计里的「71 PASS」把这两个空洞盖得严严实实。
+    这里不把它们算成 FAIL（设计如此，不是回归），但必须在结论里点名，
+    不许再出现「脸和渲染观感从来没被判过，却报全绿」的假象。
+    """
     txt = open(path, encoding="utf-8").read()
     m = _SUM_RE.search(txt)
     if not m:
@@ -94,8 +102,24 @@ def parse_rig(path):
         if body and not body.lstrip().startswith("无"):
             rows = [x for x in body.splitlines() if x.startswith("|")]
             crash = max(0, len(rows) - 2)      # 去掉表头与分隔行
-    return ("PASS %d / FAIL %d / CRASH %d" % (n_pass, n_fail, crash),
-            fails, {"blocking": n_fail, "extra": crash})
+
+    holes = []
+    for line in txt.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 7 or cells[0].startswith("**"):
+            continue
+        try:
+            p, f, s = int(cells[4]), int(cells[5]), int(cells[6])
+        except ValueError:
+            continue        # 表头 / 分隔行
+        if p == 0 and f == 0 and s > 0:
+            holes.append(cells[0])
+    detail = "PASS %d / FAIL %d / CRASH %d" % (n_pass, n_fail, crash)
+    if holes:
+        detail += " · 零判定探针 %d 个（%s）" % (len(holes), "、".join(holes))
+    return detail, fails, {"blocking": n_fail, "extra": crash}
 
 
 def parse_views(path, gate):
@@ -120,7 +144,23 @@ def parse_views(path, gate):
             {"blocking": len(fails), "extra": 0})
 
 
-PARSERS = {"appearance": parse_appearance, "asset": parse_asset, "rig": parse_rig}
+def parse_visual(path):
+    """视觉闸门：参考图 vs 固定正面渲染的画面信息密度下限。"""
+    d = json.load(open(path, encoding="utf-8"))
+    s = d.get("summary", {})
+    fails = ["%s：实测 %.4f，要求 %s" % (r["label"], r["got"], r["rule"])
+             for r in d.get("rows", []) if r.get("verdict") == "FAIL"]
+    blocking = len(fails)
+    drift = float(d.get("baseline_drift", 0))
+    if drift > 0.02:
+        fails.append("参考图与基线对不上（漂移 %.4f > 0.02），换图后要重跑 --calibrate" % drift)
+        blocking += 1
+    detail = "对参考图 PASS %d / FAIL %d" % (s.get("pass", 0), s.get("fail", 0))
+    return detail, fails, {"blocking": blocking, "extra": 0}
+
+
+PARSERS = {"appearance": parse_appearance, "asset": parse_asset,
+           "rig": parse_rig, "visual": parse_visual}
 
 
 # ---------------------------------------------------------------- 主流程

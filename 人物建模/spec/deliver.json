@@ -1,18 +1,27 @@
 {
   "_note": "交付闸门配置。scripts/deliver.py 读它：哪些产物算数、两个目标各自要什么、哪些 FAIL 是已知例外。改这里不用改代码。",
   "_targets": "game = 能进引擎；portfolio = 能进作品集。两个都过才算可交付（2026-11-03 BOSS 定）。",
-  "_order": "sources 的数组顺序 = --run 的执行顺序。views 的 producer 会重跑资产链（含 glb 导出），必须排在 asset 前面，否则 audit 读到的是旧 glb。",
+  "_order": "sources 的数组顺序 = --run 的执行顺序。views 的 producer 会重跑资产链（含 glb 导出），必须排在 asset 前面，否则 audit 读到的是旧 glb。visual 的 producer 只在渲染图过期时重渲染，不碰 glb。",
+  "_history_20261104": "根因复盘：原 appearance 的 why 写着「脸型、五眼、发型轮廓」，但这三项在 spec/reference.json 里根本不存在（14 条全是宏观比例）。已改成如实描述，并新增 visual 作为 portfolio 的硬闸门 —— 没有它，一个灯罩头也能拿「13 PASS / 0 FAIL」进作品集。",
 
   "source_root": "美女.blend",
 
   "sources": [
     {
       "id": "appearance",
-      "label": "外观 spec（像不像参考图）",
+      "label": "外观 spec（宏观比例）",
       "artifact": "out/appearance_report.json",
       "producer": ["scripts/build.py", "measure"],
       "profiles": ["portfolio"],
-      "why": "14 条外观基准（头身比、脸型、五眼、发型轮廓）对着参考图量"
+      "why": "14 条宏观比例（头身比、头长、腰肩比、裙摆锥度…）；不量五官、发丝、材质层次，不判像不像"
+    },
+    {
+      "id": "visual",
+      "label": "视觉闸门（对参考图）",
+      "artifact": "out/visual_gate.json",
+      "producer": ["scripts/visual_gate.py"],
+      "profiles": ["portfolio"],
+      "why": "固定正面渲染 vs 参考图：头发明暗层次、等距条纹周期性、脸部细节密度。过闸门 ≠ 像；不过闸门 = 一定不够格"
     },
     {
       "id": "views",
@@ -20,7 +29,7 @@
       "artifact": "out/m6_16_stats.json",
       "producer": ["scripts/build.py", "asset"],
       "profiles": ["portfolio"],
-      "why": "绕一圈 16 个机位：覆盖率不能为 0、不能发黑、去描边前后覆盖率差 ≤0.03。跑它顺带重出 glb"
+      "why": "绕一圈 16 机位：覆盖率不能为 0、不能发黑、去描边前后覆盖率差 ≤0.03。只判「有没有拍出来」，不判拍出来像不像"
     },
     {
       "id": "asset",
@@ -36,7 +45,7 @@
       "artifact": "opt/logs/check_report.md",
       "producer": ["scripts/build.py", "check"],
       "profiles": ["game", "portfolio"],
-      "why": "骨架/权重/穿模/三渲二 六个探针；绑定坏了两个目标都不成立"
+      "why": "骨架/权重/穿模/三渲二 六个探针；注意 A2/C 是纯信息探针，零判定，parse_rig 会在结论里点名"
     }
   ],
 
@@ -53,7 +62,7 @@
       "source": "rig",
       "contains": "R4 finger_bend",
       "reason": "屈指最小边长比 0.582，阈 0.6。参数搜索已把它从 0.5289 改善到 0.5817，属权重公式的既有缺陷，与外观/资产导入无关。",
-      "todo": "剩余 0.018 需要重做手部权重带，不是调参能到"
+      "todo": "剩余 0.018 需要重做手部权重带，不是调参能到。2026-11-04 试过 smoothstep 软衰减（min 0.582→0.495、拉伸边 21→63）与短边对齐阈值放宽/重排（min→0.080、max 1.788→3.570、拉伸边→225），两次都使回归恶化，均已回退；lib/hand.py 最终零改动。不要在原方向加码。"
     }
   ]
 }
