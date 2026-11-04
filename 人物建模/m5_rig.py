@@ -47,17 +47,24 @@ cloth = outfitmod.build(M)
 # T23：Hands 另加世界厚度上限 3.5mm/侧（理由见 look.HAND_OUTLINE_CAP 的注释）：
 # 腕口与前臂几乎同宽，1.85/900 机位下 3.5px = 7.19mm/侧的壳会戳出前臂轮廓。
 OL = look.outline_mat()
+OL_CARD = look.outline_card_mat(OL)
 _OL_CAP = {"Hands": look.HAND_OUTLINE_CAP}
 # 2026-11-04：Hair 单独收细描边。hair card 是 25 张薄壳片，3.5px 的描边壳会在
 # 卡片缝隙之间互相挤满，渲成一条条黑色裂纹（out/visual_front.png 头顶、发际线）。
 # 细到 1.4px 后缝隙能透出头发底色，外轮廓仍有黑边，风格不变。
+# 同日 D 步：发片有了 alpha 发丝贴图，描边壳必须跟着镂空（否则壳把发梢的缝
+# 全填回实心黑），所以 Hair 走两层描边：发帽/壳用实心黑，发片用带 alpha 的黑。
 _OL_PX = {"Hair": 1.4}
 _ol_objs, _ol_mods = [], []
-for ob in (h, b, bpy.data.objects.get("Hands"), hair, cloth):
+for ob in (h, b, bpy.data.objects.get("Hands"), cloth):
     if ob is not None:
         _ol_objs.append(ob)
         _ol_mods.append(look.add_outline(ob, OL, thickness=0.008,
                                          thickness_cap=_OL_CAP.get(ob.name)))
+if hair is not None:
+    _ol_objs.append(hair)
+    _ol_mods.append(look.add_outline_layers(
+        hair, [OL, OL_CARD, look.transparent_mat()], thickness=0.008))
 
 
 def _set_outline(ortho, res_y):

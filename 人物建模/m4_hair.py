@@ -37,11 +37,16 @@ dump_stats(hair)
 
 # C1 描边（构造与 m3_look 完全一致，厚度按视图换算成恒定像素宽）
 OL = look.outline_mat()
+OL_CARD = look.outline_card_mat(OL)
 _ol_objs, _ol_mods = [], []
-for ob in (h, b, bpy.data.objects.get("Hands"), hair):
+for ob in (h, b, bpy.data.objects.get("Hands")):
     if ob is not None:
         _ol_objs.append(ob)
         _ol_mods.append(look.add_outline(ob, OL, thickness=0.008))
+# 2026-11-04：与 m5_rig 同步 —— 发片有 alpha 贴图，描边壳也要跟着镂空。
+_ol_objs.append(hair)
+_ol_mods.append(look.add_outline_layers(
+        hair, [OL, OL_CARD, look.transparent_mat()], thickness=0.008))
 
 
 # 2026-11-04：与 m5_rig 同步 —— hair card 是薄壳片，3.5px 描边会把卡片缝隙

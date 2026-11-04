@@ -6,6 +6,7 @@ EEVEE 专属。所有材质走同一个 toon 骨架：Diffuse → Shader to RGB 
 """
 import bpy
 import math
+import os
 from mathutils import Vector
 
 import optio
@@ -305,6 +306,88 @@ def outline_mat(name="outline", color=(0.005, 0.005, 0.005)):
     return mat
 
 
+def outline_card_mat(src, tex_path=None):
+    """发片描边材质：纯黑 Emission，但跟着发丝 alpha 一起镂空。
+
+    为什么需要：Solidify 的壳是一整片实心黑，不管卡片本身镂空成什么样。
+    实测（2026-11-04）给发片挂了普通描边后，发梢的缝隙被壳的黑面填掉，
+    发际线以上糊成一条黑色乱纹。壳面复制了原面的 UV，所以让描边也采同一张
+    alpha 贴图、用同一个 Math>0.5 二值化，壳就跟着发丝一起被切掉。
+    """
+    mat = src.copy()
+    mat.name = src.name + "_card"
+    nt = mat.node_tree
+    em = nt.nodes.get("Emission")
+    out = nt.nodes.get("Material Output")
+    if em is None or out is None:
+        raise RuntimeError("outline 材质结构变了：找不到 Emission / Material Output")
+
+    path = tex_path or hair_texture()
+    img = bpy.data.images.load(path, check_existing=True)
+    img.colorspace_settings.name = 'Non-Color'
+    try:
+        img.pack()
+    except Exception:
+        pass
+
+    uv = nt.nodes.new("ShaderNodeUVMap")
+    uv.uv_map = "UVMap"
+    uv.location = (-760, -420)
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    tex.interpolation = 'Linear'
+    tex.extension = 'EXTEND'
+    tex.location = (-560, -420)
+    nt.links.new(uv.outputs["UV"], tex.inputs["Vector"])
+
+    thr = nt.nodes.new("ShaderNodeMath")
+    thr.operation = 'GREATER_THAN'
+    thr.inputs[1].default_value = 0.5
+    thr.location = (-340, -480)
+    nt.links.new(tex.outputs["Alpha"], thr.inputs[0])
+    trans = nt.nodes.new("ShaderNodeBsdfTransparent")
+    trans.location = (-160, -420)
+    mixs = nt.nodes.new("ShaderNodeMixShader")
+    mixs.location = (60, -200)
+    nt.links.new(thr.outputs[0], mixs.inputs["Factor"])
+    nt.links.new(trans.outputs[0], mixs.inputs[1])
+    nt.links.new(em.outputs[0], mixs.inputs[2])
+    nt.links.new(mixs.outputs[0], out.inputs["Surface"])
+
+    for attr, val in (("blend_method", 'CLIP'),
+                      ("surface_render_method", 'DITHERED')):
+        if hasattr(mat, attr):
+            try:
+                setattr(mat, attr, val)
+            except Exception:
+                pass
+    return mat
+
+
+def transparent_mat(name="outline_none"):
+    """完全透明的「描边」占位。
+
+    刘海是一整片帘子，下缘由 alpha 贴图切成碎发；如果照常挂黑描边，
+    Solidify 壳会沿着帘子的几何下缘勾出一条锯齿黑线（实测在正面非常显眼）。
+    这个材质让那一路描边不产生任何像素，同时保持 Solidify 偏移的槽位对齐。
+    """
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
+    nt.links.new(tr.outputs[0], out.inputs["Surface"])
+    for attr, val in (("blend_method", 'CLIP'),
+                      ("surface_render_method", 'DITHERED')):
+        if hasattr(mat, attr):
+            try:
+                setattr(mat, attr, val)
+            except Exception:
+                pass
+    return mat
+
+
 def add_outline(ob, mat, thickness=0.005, thickness_cap=None):
     """给对象挂一层「反法线外扩壳」，壳面指到描边材质槽。
 
@@ -340,6 +423,35 @@ def add_outline(ob, mat, thickness=0.005, thickness_cap=None):
     # 新生成的外壳面走 material_offset，指向最后那个槽位（描边）
     m.material_offset = len(ob.data.materials) - 1
     return m
+
+
+def add_outline_layers(ob, mats, thickness=0.005, thickness_cap=None):
+    """多材质对象的分层描边：mats[i] 对应基础材质槽 i 的描边版本。
+
+    Solidify 的 material_offset 是**按面材质索引加偏移再取模**，所以一个
+    对象要同时给「发帽」和「发片」两种描边，就必须把两个描边材质都排到
+    基础槽后面，偏移量 = 基础槽数。只追加一个描边材质时，发片面的
+    索引会绕回 0，壳面反而变成头发色（实测过：发际线没有黑边）。
+    """
+    if thickness_cap is not None:
+        thickness = min(float(thickness), float(thickness_cap))
+    base = [s for s in ob.data.materials if s is not None]
+    have = {s.name for s in ob.data.materials if s is not None}
+    for m in mats:
+        if m.name not in have:
+            ob.data.materials.append(m)
+            have.add(m.name)
+    mod = ob.modifiers.new("Outline", 'SOLIDIFY')
+    mod.thickness = thickness
+    mod.offset = 1.0
+    mod.use_flip_normals = True
+    mod.use_rim = False
+    try:
+        mod.use_quality_normals = True
+    except (AttributeError, TypeError):
+        pass
+    mod.material_offset = len(base)
+    return mod
 
 
 def set_outline_px(objs, mods, ortho_scale, res_y, base_px=3.0, per_obj_px=None,
@@ -433,6 +545,14 @@ def set_all():
                 shadow=(0.660, 0.505, 0.560), mid=(0.930, 0.805, 0.840),
                 light=(1.0, 1.0, 1.0), pos=(0.0, mid_pos, light_pos),
                 face_bias=FACE_BIAS, nose_band=NOSE_BAND)
+    hair_mat = hair_material()
+    hair_card = hair_card_material(hair_mat)
+    # 发帽与鲍伯壳同样是头发，只是闭合实体：用同一张丝纹贴图，但不镂空。
+    # 不给它们贴图时，头顶是一整块光滑的粉色塑料（正面最刺眼的「塑料感」来源）。
+    hair_strand = hair_card_material(hair_mat, alpha=False)
+    # 刘海单独一个材质槽：只有这样描边才能按材质分别指定（见 add_outline_layers）。
+    hair_bangs = hair_card_material(hair_mat)
+    hair_bangs.name = "hair_bangs"
     return {
         "skin": skin,
         "sclera": toon("sclera", (0.98, 0.97, 0.98),
@@ -452,7 +572,10 @@ def set_all():
         "lip": toon("lip", (1.0, 1.0, 1.0),
                     shadow=(0.700, 0.300, 0.380), mid=(0.930, 0.520, 0.580),
                     light=(1.0, 0.780, 0.800), pos=(0.0, 0.4, 0.7)),
-        "hair": hair_material(),
+        "hair": hair_mat,
+        "hair_card": hair_card,
+        "hair_strand": hair_strand,
+        "hair_bangs": hair_bangs,
         "cloth_white": toon("cloth_white", (0.93, 0.93, 0.95),
                             shadow=(0.60, 0.63, 0.77), mid=(0.85, 0.86, 0.91),
                             light=(1.0, 1.0, 1.0), pos=(0.0, 0.34, 0.60)),
@@ -605,6 +728,109 @@ def hair_material(name="hair", base=None,
     links.new(src, add.inputs[6])
     links.new(fac.outputs[0], add.inputs["Factor"])
     links.new(add.outputs[2], em.inputs["Color"])
+    return mat
+
+
+_HAIR_TEX_CACHE = {}
+
+
+def hair_texture():
+    """程序化发丝贴图的路径（首次调用时生成，之后复用）。"""
+    if "path" in _HAIR_TEX_CACHE:
+        return _HAIR_TEX_CACHE["path"]
+    import hairtex
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    png, _prev = hairtex.build(os.path.join(root, "out"))
+    _HAIR_TEX_CACHE["path"] = png
+    print("[look] hair strand tex " + png)
+    return png
+
+
+def hair_card_material(src, tex_path=None, alpha=True):
+    """发片专用材质：在 hair 的 toon 骨架上叠一层发丝贴图。
+
+    - RGB（Non-Color）= 明暗系数，直接乘到 Emission 的最终色上
+    - Alpha 二值化后与 Transparent 混合，得到参差的发梢轮廓
+
+    为什么用 Math>0.5 二值化，而不是交给 blend_method：
+    EEVEE Next 的 DITHERED 会把半透明像素做成抖动噪点，在 620px 的渲染里
+    读起来像脏点；BLENDED 在半透明发片互相重叠时又有排序问题。二值化是
+    硬边，与二次元描边风格一致，也没有排序问题。
+    """
+    mat = src.copy()
+    mat.name = src.name + "_card"
+    nt = mat.node_tree
+    em = nt.nodes.get("Emission")
+    out = nt.nodes.get("Material Output")
+    if em is None or out is None:
+        raise RuntimeError("hair 材质结构变了：找不到 Emission / Material Output")
+
+    path = tex_path or hair_texture()
+    img = bpy.data.images.load(path, check_existing=True)
+    img.colorspace_settings.name = 'Non-Color'
+    try:
+        img.pack()
+    except Exception:
+        pass
+
+    uv = nt.nodes.new("ShaderNodeUVMap")
+    uv.uv_map = "UVMap"
+    uv.location = (-980, -560)
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    tex.interpolation = 'Linear'
+    tex.extension = 'EXTEND'
+    tex.location = (-780, -560)
+    nt.links.new(uv.outputs["UV"], tex.inputs["Vector"])
+
+    # ---- RGB：明暗系数乘进最终色 ----
+    src_links = em.inputs["Color"].links
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = 'RGBA'
+    mix.blend_type = 'MULTIPLY'
+    mix.location = (780, -300)
+    mix.inputs["Factor"].default_value = 1.0
+    if src_links:
+        nt.links.new(src_links[0].from_socket, mix.inputs[6])
+    else:
+        mix.inputs[6].default_value = (1, 1, 1, 1)
+    nt.links.new(tex.outputs["Color"], mix.inputs[7])
+    nt.links.new(mix.outputs[2], em.inputs["Color"])
+
+    if not alpha:
+        # 发帽/壳这种闭合实体只要丝纹明暗，不能镂空（否则会被切出洞）。
+        for attr, val in (("blend_method", 'OPAQUE'),
+                          ("surface_render_method", 'DITHERED')):
+            if hasattr(mat, attr):
+                try:
+                    setattr(mat, attr, val)
+                except Exception:
+                    pass
+        return mat
+
+    # ---- Alpha：二值化后切 Transparent ----
+    thr = nt.nodes.new("ShaderNodeMath")
+    thr.operation = 'GREATER_THAN'
+    thr.inputs[1].default_value = 0.5
+    thr.location = (780, -580)
+    nt.links.new(tex.outputs["Alpha"], thr.inputs[0])
+    trans = nt.nodes.new("ShaderNodeBsdfTransparent")
+    trans.location = (960, -520)
+    mixs = nt.nodes.new("ShaderNodeMixShader")
+    mixs.location = (1140, -240)
+    nt.links.new(thr.outputs[0], mixs.inputs["Factor"])
+    nt.links.new(trans.outputs[0], mixs.inputs[1])
+    nt.links.new(em.outputs[0], mixs.inputs[2])
+    nt.links.new(mixs.outputs[0], out.inputs["Surface"])
+
+    for attr, val in (("blend_method", 'CLIP'),
+                      ("surface_render_method", 'DITHERED'),
+                      ("use_transparent_shadow", True)):
+        if hasattr(mat, attr):
+            try:
+                setattr(mat, attr, val)
+            except Exception:
+                pass
     return mat
 
 

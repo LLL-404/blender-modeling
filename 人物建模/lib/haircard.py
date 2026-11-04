@@ -87,10 +87,20 @@ def _frame(p, tan, center, up_bias=0.0):
 
 
 def card_rings(points, widths, thicks, center=None, up_bias=0.0):
-    """把控制点展开成「每点 4 个角的菱形截面」环列表。
+    """把控制点展开成「每点 4 个角的矩形截面」环列表。
 
     points / widths / thicks 长度必须一致；widths/thicks 是**全宽/全厚**。
-    返回 [[v0, v1, v2, v3], ...]，v 顺序绕截面一圈（+side, +nrm, -side, -nrm）。
+    返回 [[v0, v1, v2, v3], ...]，顺序：
+        v0 = +w +t（正面右沿）   v1 = −w +t（正面左沿）
+        v2 = −w −t（背面左沿）   v3 = +w −t（背面右沿）
+
+    为什么是矩形而不是 CHARM 原版的菱形
+    ----------------------------------
+    菱形截面在「正面」方向只有一个顶点（p + ½t·ψ），宽度被分摊到两条斜边上。
+    一旦要给卡片贴发丝纹理，正反两面就只能采到贴图正中一条窄带，两侧被压到
+    几乎零宽 —— 实测等于没贴。矩形截面正反两面的两个顶点分别落在 ±½w，
+    UV 才能铺满整张宽度。厚度只有 0.9~2.2mm（宽度的 3~7%），侧边在渲染里
+    不到一个像素，形状差异看不出来。
     """
     pts = [Vector(p) for p in points]
     n = len(pts)
@@ -104,17 +114,23 @@ def card_rings(points, widths, thicks, center=None, up_bias=0.0):
         side, nrm = _frame(p, tan, center, up_bias)
         hw = max(1e-5, widths[i] * 0.5)
         ht = max(1e-5, thicks[i] * 0.5)
-        out.append([p + side * hw, p + nrm * ht,
-                    p - side * hw, p - nrm * ht])
+        out.append([p + side * hw + nrm * ht,
+                    p - side * hw + nrm * ht,
+                    p - side * hw - nrm * ht,
+                    p + side * hw - nrm * ht])
     return out
 
 
-def card_mesh(rings, name="hair_card", cap_start=True, cap_end=True):
-    """菱形截面环 → 四边形带网格。
+def card_mesh(rings, name="hair_card", cap_start=True, cap_end=True,
+              uv=True):
+    """矩形截面环 → 四边形带网格。
 
     绕向：手写顶点顺序不可靠（实测 10 个面里 6 个朝内），所以建完 mesh 后
     用 bmesh 重算一次外向法线。卡片是闭合体，recalc_face_normals 能给出
     唯一正确的朝向。
+
+    uv=True 时建一层 UVMap：u 沿宽度 0→1（正反两面都是满幅），v 沿长度
+    0→1（0 = 根部）。发丝贴图靠它才能贴上去。
     """
     import bmesh
 
@@ -141,6 +157,17 @@ def card_mesh(rings, name="hair_card", cap_start=True, cap_end=True):
     bm.to_mesh(ob.data)
     bm.free()
     ob.data.update()
+
+    if uv:
+        n = max(1, len(rings) - 1)
+        layer = ob.data.uv_layers.new(name="UVMap")
+        # 顶点索引 % 4 = 环内序号：0/3 在 +w 侧，1/2 在 −w 侧
+        u_of = (1.0, 0.0, 0.0, 1.0)
+        for poly in ob.data.polygons:
+            for li in poly.loop_indices:
+                vid = ob.data.loops[li].vertex_index
+                i, j = divmod(vid, 4)
+                layer.data[li].uv = (u_of[j], min(1.0, i / n))
     return ob
 
 
