@@ -34,6 +34,21 @@ import look           # noqa: E402
 import head as headmod  # noqa: E402
 import body as bodymod   # noqa: E402
 
+# 目标值单源：spec/reference.json。2026-11-04 前这里手写了 0.2492 / 6.50 等
+# 6.5 头身时代的数字，改成 7.5 头身后没同步，打印出来的「目标」全是旧的。
+import json
+with open(os.path.join(HERE, "spec", "reference.json"), "r", encoding="utf-8") as _fh:
+    _REF = json.load(_fh)
+with open(os.path.join(HERE, "spec", "face.json"), "r", encoding="utf-8") as _fh:
+    _FACE = json.load(_fh)
+_HEAD_LEN_T = _REF["head_len"]["target"]
+_HEAD_LEN_TOL = _REF["head_len"]["tol"]
+_HEADS_T = _REF["heads_ratio"]["target"]
+_HEADS_TOL = _REF["heads_ratio"]["tol"]
+_HEIGHT_T = _REF["_meta"]["height"]
+_WIDTH_T = _REF["head_w_over_len"]["target"] * _HEAD_LEN_T
+_DEPTH_T = _HEAD_LEN_T / _REF["head_len_over_depth"]["target"]
+
 
 def out(tag, text):
     print(f"[probe] {tag}: {text}")
@@ -59,10 +74,11 @@ head_w = max(xs) - min(xs)
 head_d = max(ys) - min(ys)
 out("head_box", f"z[{head_bot:+.4f},{head_top:+.4f}] x[{min(xs):+.4f},{max(xs):+.4f}] "
                 f"y[{min(ys):+.4f},{max(ys):+.4f}]")
-out("head_len", f"geom={head_len:.4f} (目标 0.2492±0.0020, "
+out("head_len", f"geom={head_len:.4f} (目标 {_HEAD_LEN_T:.4f}±{_HEAD_LEN_TOL:.4f}, "
                 f"cfg 口径 CHIN_Z={cfg.CHIN_Z:.4f} → {head_top - cfg.CHIN_Z:.4f})")
-out("head_size", f"width={head_w:.4f} (目标 0.212~0.218) depth={head_d:.4f} "
-                 f"(目标 0.182~0.190)")
+out("head_size", f"width={head_w:.4f} (目标 {_WIDTH_T:.4f} = 头长×"
+                 f"{_REF['head_w_over_len']['target']:.3f}) depth={head_d:.4f} "
+                 f"(目标 {_DEPTH_T:.4f})")
 
 # ---------------------------------------------------------------- 身高/头身比
 b = bodymod.build()
@@ -70,11 +86,11 @@ bz = [v.co.z for v in b.data.vertices]
 foot_bottom = min(bz)
 stature = head_top - foot_bottom
 out("stature", f"head_top={head_top:.4f} body_bottom={foot_bottom:+.4f} "
-               f"stature={stature:.4f} (目标 1.620±0.005)")
+               f"stature={stature:.4f} (目标 {_HEIGHT_T:.3f}±0.005)")
 out("stature_aligned", f"若脚底对齐 z=0（A4 目标）: {head_top - 0.0:.4f}")
 out("heads_ratio", f"{stature / head_len:.3f} (raw 口径) / "
                    f"{(head_top - 0.0) / head_len:.3f} (A4 对齐口径) "
-                   f"(目标 6.50±0.06)")
+                   f"(目标 {_HEADS_T:.2f}±{_HEADS_TOL:.2f})")
 
 # ---------------------------------------------------------------- 按材质取贴片顶点
 def verts_by_mat(ob, name):
@@ -191,6 +207,48 @@ if wat2:
     out("normals_face", f"|x|<13mm z∈[sz1.400,sz1.550] loop={cnt2} "
                         f"max_dev={worst2:.2f}deg (参考) "
                         f"at x={wat2[0]:+.4f} z={wat2[1]:+.4f}")
+
+# ---------------------------------------------------------------- 判定
+# 2026-11-04 流程改造：之前本探针只打印数字，PASS=0 FAIL=0，被 check.py 当成
+# PASS 混进合计（71 PASS 里有一份是空的）。下面把已经算出来的量逐条判掉。
+# 目标值全部来自 DESIGN §3.1 的 A2 行，不在这里新造目标。
+def verdict(tag, ok, text):
+    print(f"[probe] {tag}: {'PASS' if ok else 'FAIL'} {text}")
+
+
+try:
+    _prot = 1000.0 * (fore_y - nose_y)
+    _lo, _hi = _FACE["nose_protrusion_mm"]["min"], _FACE["nose_protrusion_mm"]["max"]
+    verdict("assert.nose", _lo <= _prot <= _hi, f"protrusion={_prot:.2f}mm 目标[{_lo},{_hi}]")
+except Exception:
+    verdict("assert.nose", False, "鼻尖/额面没算出来")
+
+try:
+    _mr = mw / head_w
+    _lo, _hi = _FACE["mouth_over_face"]["min"], _FACE["mouth_over_face"]["max"]
+    verdict("assert.mouth", _lo <= _mr <= _hi, f"{100.0 * _mr:.2f}% 脸宽 目标[{_lo * 100:.0f},{_hi * 100:.0f}]")
+except Exception:
+    verdict("assert.mouth", False, "嘴宽没算出来")
+
+try:
+    _er = inner_gap / eye_w
+    _lo, _hi = _FACE["inner_eye_over_eye_width"]["min"], _FACE["inner_eye_over_eye_width"]["max"]
+    verdict("assert.eye", _lo <= _er <= _hi, f"内眼角间距/眼宽={_er:.3f} 目标[{_lo},{_hi}]")
+except Exception:
+    verdict("assert.eye", False, "眼距没算出来")
+
+try:
+    _eh = 1000.0 * (max(ez) - min(ez))
+    _lo, _hi = _FACE["ear_height_mm"]["min"], _FACE["ear_height_mm"]["max"]
+    verdict("assert.ear", _lo <= _eh <= _hi, f"height={_eh:.2f}mm 目标[{_lo},{_hi}]")
+except Exception:
+    verdict("assert.ear", False, "耳高没算出来")
+
+try:
+    _mx = _FACE["face_normal_dev_deg"]["max"]
+    verdict("assert.normals_mid", worst <= _mx, f"max_dev={worst:.2f}deg 目标<={_mx}")
+except Exception:
+    verdict("assert.normals_mid", False, "面中法线没算出来")
 
 # ---------------------------------------------------------------- 像素统计
 PNG = os.path.join(HERE, "out", "m3_face_front.png")

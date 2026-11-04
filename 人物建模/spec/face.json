@@ -1,0 +1,9 @@
+{
+  "_note": "面部几何判据。数值来自 DESIGN.md §3.1 A2 行（2026-11-04 起机器可读，别再抄进探针）。",
+  "_why": "这些是设计目标，不是从参考图量的：参考图是 3/4 视角带头部倾斜，量不出正面的眼距/嘴宽。参考图只提供风格与比例类型。",
+  "nose_protrusion_mm": {"min": 8.5, "max": 10.0, "label": "鼻尖相对额面前伸"},
+  "mouth_over_face": {"min": 0.10, "max": 0.13, "label": "嘴宽/脸宽"},
+  "inner_eye_over_eye_width": {"min": 0.85, "max": 1.00, "label": "内眼角间距/眼宽"},
+  "ear_height_mm": {"min": 45.0, "max": 50.0, "label": "耳高"},
+  "face_normal_dev_deg": {"max": 25.0, "label": "面中法线偏离 −Y"}
+}

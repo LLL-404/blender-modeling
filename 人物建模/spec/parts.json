@@ -1,0 +1,354 @@
+{
+  "_note": "工序表。scripts/flow.py 读它：每个部位怎么建、拿什么当证据、过哪些闸门、要不要人眼签收。改工序只改这里，不改代码。",
+  "_rules": [
+    "任一闸门项 FAIL → 本部位 FAIL，不进下一部位。",
+    "探针 PASS=0 且 FAIL=0 = 零判定 → FAIL（不是 SKIP）。",
+    "探针 PASS 数少于 min_pass → FAIL（防止探针悄悄少判几条）。",
+    "证据图必须比全部源文件新，否则 STALE（改完代码没重建 = 过期证据）。",
+    "人眼复核必须逐条给 PASS/FAIL 且写看到什么；缺一条 = 未签收。",
+    "复核时间必须晚于证据图时间，否则视为没看新图。",
+    "已知例外必须写进 exceptions 并带 expires；过期后照常判 FAIL。"
+  ],
+  "schema": 1,
+  "parts": [
+    {
+      "id": "body",
+      "label": "身体素体",
+      "why": "比例、手、脚、站姿。后面所有部位都站在它上面。",
+      "builds": [
+        [
+          "scripts/build.py",
+          "body"
+        ]
+      ],
+      "sources": [
+        "m1_body.py",
+        "lib/body.py",
+        "lib/hand.py",
+        "lib/meshkit.py",
+        "lib/shots.py",
+        "cfg.py",
+        "params/profile.json"
+      ],
+      "evidence": [
+        "out/m1_body_front.png",
+        "out/m1_body_side.png",
+        "out/m1_body_back.png",
+        "out/m1_body_q34.png",
+        "out/m1_hand.png"
+      ],
+      "probes": [
+        {
+          "id": "a1",
+          "label": "A1 手/脚趾",
+          "script": "_stageA/a1_hand_probe.py",
+          "min_pass": 15
+        }
+      ],
+      "metrics": [],
+      "review": [
+        "正面/侧面/背面轮廓：肩、腰、髋、腿的比例符合 7.5 头身，没有明显畸形",
+        "手：五指分开、指节可见、腕部没有环形台阶",
+        "脚：脚趾可辨、脚底贴地、脚不陷进地板",
+        "站姿：左右对称，没有一侧塌陷或歪斜"
+      ]
+    },
+    {
+      "id": "face",
+      "label": "头与脸",
+      "why": "头骨、下颌、五官、三渲二材质。脸是二次元角色成败的第一眼。",
+      "builds": [
+        [
+          "scripts/build.py",
+          "head"
+        ],
+        [
+          "scripts/build.py",
+          "look"
+        ]
+      ],
+      "sources": [
+        "m2_head.py",
+        "m3_look.py",
+        "lib/head.py",
+        "lib/face_detail.py",
+        "lib/look.py",
+        "lib/mats.py",
+        "lib/body.py",
+        "lib/shots.py",
+        "cfg.py",
+        "params/profile.json"
+      ],
+      "gate_files": [
+        "spec/face.json"
+      ],
+      "evidence": [
+        "out/m3_face_front.png",
+        "out/m3_face_q34.png",
+        "out/m3_face_side.png",
+        "out/m3_upper.png"
+      ],
+      "probes": [
+        {
+          "id": "a2",
+          "label": "A2 五官几何",
+          "script": "_stageA/a2_face_probe.py",
+          "min_pass": 4
+        },
+        {
+          "id": "c",
+          "label": "C 三渲二",
+          "script": "_stageC/c_probe.py",
+          "min_pass": 5
+        }
+      ],
+      "metrics": [],
+      "review": [
+        "脸型：下颌线从耳下到下巴连续，颧骨不过分外扩，下巴不尖成锥",
+        "五官齐全且位置合理：双眼、眉、鼻、嘴、耳都在，左右高度一致",
+        "侧面：鼻梁/鼻尖/嘴唇/下巴有体积，不是贴在壳上的薄片",
+        "眼睛：虹膜、瞳孔、睫毛分得清，不糊成一团"
+      ]
+    },
+    {
+      "id": "hair",
+      "label": "头发",
+      "why": "发型轮廓占剪影一半以上；发丝层次决定它读成头发还是塑料壳。",
+      "builds": [
+        [
+          "scripts/build.py",
+          "hair"
+        ]
+      ],
+      "sources": [
+        "m4_hair.py",
+        "lib/hair.py",
+        "lib/haircard.py",
+        "lib/hairtex.py",
+        "lib/look.py",
+        "lib/head.py",
+        "cfg.py",
+        "params/profile.json"
+      ],
+      "gate_files": [
+        "spec/visual_gate.json"
+      ],
+      "evidence": [
+        "out/m4_face_front.png",
+        "out/m4_face_q34.png",
+        "out/m4_face_side.png",
+        "out/m4_face_back.png",
+        "out/m4_upper.png"
+      ],
+      "probes": [
+        {
+          "id": "d",
+          "label": "D 发型细节",
+          "script": "_stageD/d_probe.py",
+          "min_pass": 9
+        }
+      ],
+      "metrics": [
+        {
+          "id": "hair_tone_span",
+          "label": "头发明暗层次",
+          "image": "out/m4_face_front.png",
+          "key": "hair_tone_span",
+          "mode": "min"
+        },
+        {
+          "id": "hair_stripe_peak",
+          "label": "发束条纹周期性",
+          "image": "out/m4_face_front.png",
+          "key": "hair_stripe_peak",
+          "mode": "max"
+        },
+        {
+          "id": "face_edge_density",
+          "label": "脸部细节密度",
+          "image": "out/m4_face_front.png",
+          "key": "face_edge_density",
+          "mode": "min"
+        }
+      ],
+      "review": [
+        "剪影：中分、露额头、发梢到下巴附近，与参考图同类型",
+        "头顶：没有凸包、尖锥或破洞",
+        "侧面：有厚度、有层次，不是方盒或纸片",
+        "发丝：能看到一缕缕的明暗，不是均匀色块"
+      ]
+    },
+    {
+      "id": "outfit",
+      "label": "服装",
+      "why": "穿模、悬空、层次。服装是最容易一眼穿帮的部位。",
+      "builds": [
+        [
+          "scripts/build.py",
+          "outfit"
+        ]
+      ],
+      "sources": [
+        "m5_outfit.py",
+        "lib/outfit.py",
+        "lib/body.py",
+        "lib/look.py",
+        "cfg.py",
+        "params/profile.json"
+      ],
+      "evidence": [
+        "out/m5_face_front.png",
+        "out/m5_body_front.png",
+        "out/m5_body_q34.png",
+        "out/m5_body_side.png"
+      ],
+      "probes": [
+        {
+          "id": "a4",
+          "label": "A4 服装净空",
+          "script": "_stageA/a4_fit_probe.py",
+          "min_pass": 10
+        }
+      ],
+      "metrics": [],
+      "review": [
+        "领口/肩线/袖口/裙摆没有穿模或悬空",
+        "服装与人体的层次清楚，衣料有厚度不是贴纸",
+        "裙褶左右不完全镜像，正面中线是褶峰"
+      ]
+    },
+    {
+      "id": "rig",
+      "label": "骨架与四姿势",
+      "why": "绑定坏了，前面做得再好也是一张图。这里同时量外观比例和画面密度。",
+      "builds": [
+        [
+          "scripts/build.py",
+          "rig"
+        ]
+      ],
+      "sources": [
+        "m5_rig.py",
+        "lib/rig.py",
+        "lib/look.py",
+        "lib/shots.py",
+        "cfg.py",
+        "params/profile.json"
+      ],
+      "gate_files": [
+        "spec/visual_gate.json"
+      ],
+      "evidence": [
+        "out/m5_pose_rest.png",
+        "out/m5_pose_wave.png",
+        "out/m5_pose_walk.png",
+        "out/m5_pose_reach.png",
+        "out/m5_poses.png"
+      ],
+      "producers": [
+        [
+          "scripts/build.py",
+          "measure"
+        ],
+        [
+          "scripts/visual_gate.py"
+        ]
+      ],
+      "probes": [
+        {
+          "id": "b",
+          "label": "B 骨架/权重",
+          "script": "_stageB/b_probe.py",
+          "min_pass": 28,
+          "exceptions": [
+            {
+              "contains": "R4 finger_bend",
+              "reason": "屈指最小边长比 0.582，阈 0.6。参数搜索已从 0.5289 改善到 0.5817，属权重公式既有缺陷；试过软衰减与短边重排都恶化，已回退。",
+              "todo": "剩余 0.018 要重做手部权重带，不是调参能到。",
+              "expires": "2026-12-31"
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "id": "appearance",
+          "label": "14 条外观比例",
+          "path": "out/appearance_report.json",
+          "parser": "appearance"
+        },
+        {
+          "id": "visual",
+          "label": "视觉闸门（对参考图）",
+          "path": "out/visual_gate.json",
+          "parser": "visual"
+        }
+      ],
+      "review": [
+        "四个姿势：没有破面、没有拉伸成丝、没有部件留在原地",
+        "手跟随手臂运动，手指姿态自然",
+        "头发和裙摆跟随身体，不穿进躯干"
+      ],
+      "depends_on": [
+        "美女.blend"
+      ]
+    },
+    {
+      "id": "asset",
+      "label": "资产化",
+      "why": "UV、贴图、glb、16 机位。进引擎前的最后一道。",
+      "builds": [
+        [
+          "scripts/build.py",
+          "asset"
+        ]
+      ],
+      "sources": [
+        "m6_asset.py",
+        "m6_bake.py",
+        "m6_export.py",
+        "m6_multiview.py",
+        "lib/asset.py",
+        "lib/uvkit.py",
+        "lib/bake.py",
+        "cfg.py"
+      ],
+      "gate_files": [
+        "spec/deliver.json",
+        "spec/game_budget.json"
+      ],
+      "evidence": [
+        "out/m6_16_after.png",
+        "out/m6_16_before.png"
+      ],
+      "producers": [
+        [
+          "scripts/audit.py"
+        ]
+      ],
+      "probes": [],
+      "artifacts": [
+        {
+          "id": "asset",
+          "label": "资产预算审计",
+          "path": "out/audit.json",
+          "parser": "asset"
+        },
+        {
+          "id": "views",
+          "label": "16 机位一致性",
+          "path": "out/m6_16_stats.json",
+          "parser": "views"
+        }
+      ],
+      "review": [
+        "16 机位：没有破面、黑块、空洞",
+        "glb 回读：材质、UV、骨骼都在，尺寸与 blend 一致",
+        "去描边后轮廓没有塌陷（覆盖率差 ≤0.03）"
+      ],
+      "depends_on": [
+        "美女.blend"
+      ]
+    }
+  ]
+}

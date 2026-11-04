@@ -28,6 +28,8 @@ python scripts/build.py check                   # 6 个探针自检，报告写 
 python scripts/build.py measure                 # 外观 spec 体检：实测 vs 目标（只读 美女.blend）
 python scripts/brief.py briefs/example.json     # brief → profile 受控补丁（dry-run，默认不写盘）
 python scripts/visual_gate.py                   # 视觉闸门：当前渲染 vs 参考图 → out/visual_gate.json
+python scripts/flow.py status                   # 工序闸门：6 个部位各自过没过（不跑构建）
+python scripts/flow.py run body                 # 建一个部位 + 跑它的探针 + 判闸门
 python scripts/deliver.py                       # 一句话：进游戏 / 进作品集，现在行不行
 ```
 
@@ -41,10 +43,36 @@ python scripts/build.py body|head|look|hair|outfit|rig|asset
 - `rig` 会写项目根的 `美女.blend`，并跑 B4 回归断言（4 张姿势图 + 权重和 + 关键骨位移）。
 - 构建不依赖当前目录：各入口与 `lib/shots.py:10` 的输出路径都由 `__file__` 推导；`build.py` 仍把 `cwd` 固定为项目根以统一行为。
 
+## 制作流程（2026-11-04 起，唯一承认的工序）
+
+`build.py all` 只是「不带闸门的重建」。正式工序是 **一个部位一个部位做，四样都过才往下**：
+
+| 四样 | 谁判 |
+|---|---|
+| 构建成功 | `flow.py run` |
+| 探针 PASS/FAIL | 各部位自己的探针（A1/A2/A4/B/C/D） |
+| 图像指标 | 参考图校准的明暗/条纹/脸密度（头发、骨架两部位） |
+| 人眼复核 | 逐条写 PASS/FAIL + 看到什么，落 `out/flow/<部位>/review.json` |
+
+硬规则：**零判定 = 失败**；证据比源码旧 = STALE；没签收 = NEEDS-REVIEW；任一 FAIL 不进下一部位。
+改哪一部位只重跑哪一部位。完整规则、参考图能测/不能测的清单、当前 6 个部位的状态见
+[docs/制作流程.md](docs/制作流程.md)。
+
+```bash
+python scripts/flow.py run body       # 建 + 跑探针 → 通常停在 NEEDS-REVIEW
+python scripts/flow.py review body    # 列出证据图和复核清单
+python scripts/flow.py check body     # 写完 review.json 后重判，不重建
+python scripts/flow.py status --write # 写 out/flow/summary.json（deliver.py 读）
+```
+
+`deliver.py` 新增 `flow` 作为交付来源：两个目标都要求 6 个部位全 PASS，
+原来那四套判据降为零件，不再单独决定能不能交付。
+
 ## 视觉闸门（2026-11-04 根因复盘产物）
 
 `spec/reference.json` 的 14 条 spec 全是宏观比例，**没有一条**量五官、发丝或材质层次；
-A2/C 两个探针是纯信息探针（`PASS=0 SKIP=14` / `PASS=0 SKIP=35`）；16 机位只判「有没有拍出来」。
+A2/C 两个探针当时是纯信息探针（`PASS=0 SKIP=14` / `PASS=0 SKIP=35`，2026-11-04 起已补成
+5 条 / 8 条 PASS-FAIL 判定）；16 机位只判「有没有拍出来」。
 三者合起来导致「71 PASS / 13 PASS / 0 FAIL」与「模型是一顶灯罩」同时成立 ——
 参考图只在开工当天被看了一眼，之后再没进过任何判据。
 

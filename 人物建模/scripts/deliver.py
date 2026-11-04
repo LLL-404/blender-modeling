@@ -119,7 +119,9 @@ def parse_rig(path):
     detail = "PASS %d / FAIL %d / CRASH %d" % (n_pass, n_fail, crash)
     if holes:
         detail += " · 零判定探针 %d 个（%s）" % (len(holes), "、".join(holes))
-    return detail, fails, {"blocking": n_fail, "extra": crash}
+        # 零判定 = 这条探针没在判，按失败算（2026-11-04 流程改造）。
+        fails = fails + ["零判定探针：%s（PASS=0 FAIL=0）" % h for h in holes]
+    return detail, fails, {"blocking": n_fail + len(holes), "extra": crash}
 
 
 def parse_views(path, gate):
@@ -159,8 +161,24 @@ def parse_visual(path):
     return detail, fails, {"blocking": blocking, "extra": 0}
 
 
+def parse_flow(path):
+    """工序闸门：每个部位都要 PASS，且不是过期/未签收/上游未过。"""
+    d = json.load(open(path, encoding="utf-8"))
+    parts = d.get("parts", [])
+    fails = []
+    for p in parts:
+        if p.get("verdict") == "PASS" and p.get("order_ok", True):
+            continue
+        reason = p.get("stale") or p.get("verdict", "?")
+        if p.get("verdict") == "PASS" and not p.get("order_ok", True):
+            reason = "本部位过闸但上游未过"
+        fails.append("%s：%s" % (p.get("label", p.get("id")), reason))
+    return ("%d / %d 部位过闸" % (len(parts) - len(fails), len(parts)),
+            fails, {"blocking": len(fails), "extra": 0})
+
+
 PARSERS = {"appearance": parse_appearance, "asset": parse_asset,
-           "rig": parse_rig, "visual": parse_visual}
+           "rig": parse_rig, "visual": parse_visual, "flow": parse_flow}
 
 
 # ---------------------------------------------------------------- 主流程

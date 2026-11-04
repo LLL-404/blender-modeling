@@ -41,6 +41,13 @@ _HEAD_ANCHOR = 1.3836
 _HEAD_SCALE = 1.063
 _HEAD_SHIFT = -0.0127672
 
+# 头宽目标单源：spec/reference.json（7.5 头身后是 0.188，不再是 6.5 头身的 0.212~0.218）。
+import json as _json
+with open(os.path.join(HERE, "spec", "reference.json"), "r", encoding="utf-8") as _fh:
+    _REF = _json.load(_fh)
+_HW_T = _REF["head_w_over_len"]["target"] * _REF["head_len"]["target"]
+_HW_TOL = _REF["head_w_over_len"]["tol"]
+
 
 def sz(z):
     return _HEAD_ANCHOR + (z - _HEAD_ANCHOR) * _HEAD_SCALE + _HEAD_SHIFT
@@ -390,7 +397,8 @@ def geometry_checks():
                      f"| concha_p75_out={1000.0 * c_typ:.2f}mm(n={len(con)}) "
                      f"rim_p75_out={1000.0 * r_typ:.2f}mm(n={len(rimv)}) "
                      f"delta={1000.0 * (r_typ - c_typ):.2f}mm(内凹目标≥1)")
-    out("head_width", f"Head含耳={2.0 * hx:.4f} (目标0.212~0.218) "
+    out("head_width", f"Head含耳={2.0 * hx:.4f} "
+                      f"(目标{_HW_T * (1 - _HW_TOL):.4f}~{_HW_T * (1 + _HW_TOL):.4f}) "
                       f"| 头骨本体={2.0 * hbx:.4f} (耳贡献 {1000.0 * (hx - hbx):.2f}mm/侧)")
 
     out("geom_slots", " | ".join(f"{ob.name}:{len(ob.data.materials)}槽" for ob in targets))
@@ -419,18 +427,28 @@ def geometry_checks():
 # ================================================================ 主流程
 def main():
     out("mode", "Blender(bpy+numpy)" if HAS_BPY else "system python(Pillow+numpy)")
+    # 2026-11-04 流程改造：本探针原来只打印数字（PASS=0 FAIL=0），被 check.py
+    # 当成 PASS 混进合计。下面按 DESIGN §3.1 C1~C4 已有目标逐条判。
+    checks = []
 
     # ---------- C1 描边 ----------
     for name in ("m3_body_q34", "m3_upper", "m3_face_front", "m4_face_front", "m5_body_front"):
         a, path = read_rgb(name)
         if a is None:
             out("edge", f"{name}: MISS {path}")
+            if name == "m3_face_front":
+                checks.append(("assert.outline", False, "m3_face_front.png 不存在"))
             continue
         e = edge_dark_width(a)
         if e:
             out("edge", f"{name}: n={e['n']} p25={e['p25']:.0f} p50={e['p50']:.0f} "
                         f"p75={e['p75']:.0f} max={e['mx']} zero={e['zero']} "
                         f"(目标 p50∈[2,4])")
+            # 只判正对脸机位：m4_face_front 的 hair card 描边故意收细到 1.4px，
+            # 用同一目标判它会把「按设计收细」误判成缺陷。
+            if name == "m3_face_front":
+                checks.append(("assert.outline", 2 <= e["p50"] <= 4,
+                               f"p50={e['p50']:.0f}px 目标[2,4]（{name}）"))
 
     # ---------- C2/C3 皮肤色阶 ----------
     a, _ = read_rgb("m3_face_front")
@@ -441,6 +459,11 @@ def main():
                         f"p95={s['p95']:.1f} p50-p5={s['p50m5']:.1f} "
                         f"p95-p50={s['p95m50']:.1f} ge228={s['ge228']:.1f}% "
                         f"tiers={ {k: round(v, 1) for k, v in s['tiers'].items()} }")
+            checks.append(("assert.skin_p50", 175.0 <= s["p50"] <= 215.0,
+                           f"p50={s['p50']:.1f} 目标[175,215]"))
+            checks.append(("assert.skin_range", s["p95m50"] >= 30.0,
+                           f"p95-p50={s['p95m50']:.1f} 目标>=30"))
+
 
     # ---------- C2 面部阴影 ROI ----------
     a, _ = read_rgb("m3_face_front")
@@ -457,6 +480,8 @@ def main():
         out("face_chin", f"ROI z[{sz(1.372):.4f},{sz(1.398):.4f}] |x|<20mm "
                          f"px_box={chin['box']} n={chin['n']} shadow={chin['shadow_pct']}% "
                          f"(目标≥8%) tiers={({k: round(v, 1) for k, v in chin['tiers'].items()}) if chin['tiers'] else None}")
+        checks.append(("assert.chin_shadow", chin["shadow_pct"] >= 8.0,
+                       f"下巴阴影 {chin['shadow_pct']:.1f}% 目标>=8%"))
 
     # ---------- C2 手 / 同侧前臂 / 脸 ----------
     a, _ = read_rgb("m3_body_front")
@@ -472,6 +497,9 @@ def main():
             out("hand_arm", f"hand{side}: hand={h} n={d['hand_n']} | "
                             f"forearm={ar} n={d['arm_n']} box={d['arm_box']} | "
                             f"|hand-forearm|={da if da is None else round(da, 1)} (目标≤8)")
+            if da is not None:
+                checks.append(("assert.hand_arm", da <= 8.0,
+                               f"{side} |hand-forearm|={da:.1f} 目标<=8"))
             out("hand_face", f"hand{side}: |hand-face|={df if df is None else round(df, 1)} (参考值，不作缺陷)")
         hr, hl = hands.get("R(+x)", {}).get("hand"), hands.get("L(-x)", {}).get("hand")
         if hr is not None and hl is not None:
@@ -484,10 +512,15 @@ def main():
         out("hair_hi", f"m4_face_front: hair_px={hh['n']} t99={hh.get('t99')} "
                        f"n_hi={hh.get('n_hi')} z_med={hh.get('z_med')} "
                        f"in[1.52,1.60]={hh.get('in_band')}% (目标≥60%)")
+        if hh.get("in_band") is not None:
+            checks.append(("assert.hair_hi", hh["in_band"] >= 60.0,
+                           f"高光带在 z[1.52,1.60] 占 {hh['in_band']:.1f}% 目标>=60%"))
         r = rim_width(a)
         if r:
             out("rim", f"m4_face_front: n={r['n']} p50={r['p50']:.0f} "
                        f"p90={r['p90']:.0f} max={r['mx']} (目标 2~6px)")
+            checks.append(("assert.rim", 2 <= r["p50"] <= 6,
+                           f"轮廓光 p50={r['p50']:.0f}px 目标[2,6]"))
     # C4 收口：验收对象改为深色区域 —— m3_body_q34 的藏青裙(z 0.65~1.05)、
     # m3_upper 的头发(z 1.40~1.53 在画内)、m5_body_front 的裙摆。
     for name in ("m3_body_q34", "m3_upper", "m3_body_front"):
@@ -507,6 +540,12 @@ def main():
             geometry_checks()
         except Exception as exc:
             out("geom", f"SKIP: {type(exc).__name__}: {exc}")
+
+    # ---------- 判定汇总 ----------
+    if not checks:
+        out("assert.none", "FAIL 一条判定都没有（图不全或统计全跳过）")
+    for tag, ok, text in checks:
+        out(tag, ("PASS " if ok else "FAIL ") + text)
 
     out("done", "1" if True else "0")
 

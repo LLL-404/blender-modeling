@@ -45,7 +45,15 @@
       "artifact": "opt/logs/check_report.md",
       "producer": ["scripts/build.py", "check"],
       "profiles": ["game", "portfolio"],
-      "why": "骨架/权重/穿模/三渲二 六个探针；注意 A2/C 是纯信息探针，零判定，parse_rig 会在结论里点名"
+      "why": "骨架/权重/穿模/三渲二/五官六个探针，全部有 PASS/FAIL；零判定会被 check 记 HOLE 并按失败算"
+    },
+    {
+      "id": "flow",
+      "label": "工序闸门（分部位）",
+      "artifact": "out/flow/summary.json",
+      "producer": ["scripts/flow.py", "status", "--write"],
+      "profiles": ["game", "portfolio"],
+      "why": "每个部位：构建 + 探针 + 图像指标 + 人眼复核。零判定/证据比源码旧/没签收/上游未过都不算过。这是唯一承认的工序证据"
     }
   ],
 

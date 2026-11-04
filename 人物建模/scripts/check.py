@@ -12,6 +12,8 @@
       含 `PASS` 或 `OK`            -> PASS  （_stageA/a4_fit_probe.py、_stageD/d_probe.py 用 OK 当通过标记）
       只有 [probe]/[bprobe]/[cprobe]/[dprobe] 的信息行 -> SKIP（只记录，不判定）
   · 探针崩溃（退出码非 0 或输出含 Traceback）单独记 CRASH，**不计入 PASS/FAIL/SKIP**。
+  · **PASS=0 且 FAIL=0 -> HOLE（零判定 = 失败）**。2026-11-04 前的版本把它记成 OK，
+    A2/C 两个纯信息探针因此被算进「71 PASS」，而它们一条判定都没有。
   · 行号 = 该探针 stdout 的第 N 行；完整输出落在 opt/logs/probe_<脚本名>.log，便于回查源码位置。
   · Blender 缺失或 6 个探针脚本一个都不存在时，直接报错退出（退出码 2），不假装通过。
 """
@@ -98,6 +100,7 @@ def _write_report(rows, blender):
         "- 项目根：`{0}`".format(ROOT),
         "- 判定口径：含 `FAIL` -> FAIL；含 `PASS` 或 `OK` -> PASS（A4/D 两个探针用 `OK` 当通过标记）；",
         "  只有 `[probe]/[bprobe]/[cprobe]/[dprobe]` 的信息行 -> SKIP。",
+        "  **PASS=0 且 FAIL=0 -> HOLE（零判定 = 失败，不是 SKIP）**。",
         "  崩溃（退出码非 0 或含 Traceback）单独记 CRASH，不计入 PASS/FAIL/SKIP。",
         "  行号 = 该探针 stdout 的第 N 行，完整输出在 `opt/logs/probe_<脚本名>.log`。",
         "",
@@ -147,6 +150,19 @@ def _write_report(rows, blender):
             lines.extend(tail)
             lines.append("```")
             lines.append("")
+
+    holes = [item for item in rows if item["status"] == "HOLE"]
+    lines.append("## HOLE 明细（零判定）")
+    lines.append("")
+    if not holes:
+        lines.append("无。")
+    else:
+        lines.append("这些探针一条 PASS/FAIL 都没打，等于没有检查，按失败处理：")
+        lines.append("")
+        for item in holes:
+            lines.append("- {0}（`{1}`，{2} 行信息）".format(
+                item["name"], item["path"], item["counts"]["SKIP"]))
+        lines.append("")
 
     missing = [item for item in rows if item["status"] == "MISSING"]
     if missing:
@@ -199,7 +215,15 @@ def main():
         counts = {"PASS": 0, "FAIL": 0, "SKIP": 0}
         for _lineno, _text, kind in extracted:
             counts[kind] += 1
-        status = "CRASH" if crash else "OK"
+        if crash:
+            status = "CRASH"
+        elif counts["PASS"] == 0 and counts["FAIL"] == 0:
+            # 2026-11-04 流程改造：零判定 = 失败。
+            # 旧版把 A2（PASS=0 SKIP=14）、C（PASS=0 SKIP=35）记成 OK，
+            # 合计里的「71 PASS」把它们盖住 —— 探针没在判，等于没检查。
+            status = "HOLE"
+        else:
+            status = "OK"
         rows.append({"name": name, "path": rel, "status": status, "exit": code,
                      "elapsed": elapsed, "stdout": out, "rows": extracted, "counts": counts})
         print("[check] {0}: exit={1} {2} PASS={3} FAIL={4} SKIP={5} {6:.1f}s -> {7}".format(
@@ -210,8 +234,9 @@ def main():
 
     crash_count = sum(1 for item in rows if item["status"] == "CRASH")
     missing_count = sum(1 for item in rows if item["status"] == "MISSING")
-    print("[check] PASS={0} FAIL={1} SKIP={2} CRASH={3} MISSING={4}".format(
-        total["PASS"], total["FAIL"], total["SKIP"], crash_count, missing_count))
+    hole_count = sum(1 for item in rows if item["status"] == "HOLE")
+    print("[check] PASS={0} FAIL={1} SKIP={2} CRASH={3} HOLE={4} MISSING={5}".format(
+        total["PASS"], total["FAIL"], total["SKIP"], crash_count, hole_count, missing_count))
     fails = [(item["name"], r[0], r[1]) for item in rows for r in item["rows"] if r[2] == "FAIL"]
     if fails:
         print("[check] FAIL 明细：")
@@ -224,9 +249,15 @@ def main():
                 print("  {0}（exit={1}）日志 {2}".format(
                     item["name"], item["exit"], os.path.join("opt", "logs",
                     "probe_{0}.log".format(os.path.splitext(os.path.basename(item["path"]))[0]))))
+    if hole_count:
+        print("[check] HOLE 明细（零判定 = 失败）：")
+        for item in rows:
+            if item["status"] == "HOLE":
+                print("  {0}（PASS=0 FAIL=0，只有 {1} 行信息）".format(
+                    item["name"], item["counts"]["SKIP"]))
     print("[check] 报告 -> {0}".format(REPORT_PATH))
 
-    if total["FAIL"] or crash_count or missing_count:
+    if total["FAIL"] or crash_count or hole_count or missing_count:
         return 1
     return 0
 
