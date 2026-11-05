@@ -15,6 +15,7 @@
 | 4 | SDF 修的是「接缝与穿插」，**修不了「丑」**（五官比例、发丝、贴图、配色一条都不碰） |
 | 5 | 本机 `SDFGridBoolean` 只有硬 UNION，**没有 smooth-union 选项**；圆滑过渡要走 Fillet 或「膨胀→并集→收缩」 |
 | 6 | **v2 补充（17:10 补算后）**：本文件里 `0.5mm` 体素、`Iterations 2~4`、内存估算三处是拍的，已被解析推导推翻并改正；详见 [SDF数学推导与误差界.md](SDF数学推导与误差界.md) |
+| 7 | **v3 补充（18:08 查手册后）**：离线手册是 Blender 5.2 LTS 中文版，与本机 5.2.2 一致；**Fillet 语义、窄带存储不再是推断**，四处判断已改；详见 [手册查证-头颈接缝与融合.md](手册查证-头颈接缝与融合.md) |
 
 ---
 
@@ -47,7 +48,7 @@
 |---|---|---|
 | `GeometryNodeMeshToSDFGrid` | Mesh / Voxel Size(默认 0.3) / Band Width(默认 3) | 网格 → 距离场 |
 | `GeometryNodeSDFGridBoolean` | Grid 1 / Grid 2；`operation` = **INTERSECT / UNION / DIFFERENCE** | 硬并集、交、差 —— **没有 SMOOTH** |
-| `GeometryNodeSDFGridFillet` | Grid / Iterations | 交线倒圆角 |
+| `GeometryNodeSDFGridFillet` | Grid / Iterations | **SDF圆角**：手册原话「仅作用于负主曲率（凹角）区域，保持整体体积不变」「适用于交叠形状的柔和过渡处理，或在布尔运算后消除硬性过渡」「迭代越高圆角半径越大」 |
 | `GeometryNodeSDFGridOffset` | Grid / Distance | 整体膨胀(负)/收缩(正) |
 | `GeometryNodeSDFGridMean` | Grid / Width / Iterations | 盒式平滑 |
 | `GeometryNodeSDFGridLaplacian` | Grid / Iterations | 拉普拉斯平滑 |
@@ -58,7 +59,7 @@
 
 | 路 | 做法 | 代价 |
 |---|---|---|
-| **A 原生 Fillet（推荐先试）** | 两个 grid → UNION → `SDFGridFillet`(Iterations 2~4) → `GridToMesh` | 零依赖、全原生；是「交线倒圆角」，不是严格 smin |
+| **A 原生 Fillet（推荐先试）** | 两个 grid → UNION → `SDFGridFillet` → `GridToMesh` | 零依赖、全原生；手册确认它不是拉普拉斯平滑，而是**只作用于凹角、保体积**的定向圆角，正是「布尔后消除硬性过渡」的官方配套节点。不是严格 smin |
 | B 膨胀-并集-收缩 | 两 grid 各 `Offset(−k)` → UNION → `Offset(+k)` | **只是一阶近似，不是等价替代**：`smin` 破坏 Eikonal 条件（颈部 `\|∇d\|=0.436`），实际几何位移放大 2.294×；`k=4mm` 时误差 9.3%。见数学文档 §1.2 |
 | C 自己算 smin | Python/numpy 采两 grid 值算 `smin` 再写回 | 严格 smin；Blender 的 grid Python API 暴露有限，可能要转 OpenVDB 或用外部库 |
 
@@ -107,8 +108,9 @@
 
 **0.5mm 不够**：marching cubes 采样误差 `e ≤ √3·h/2 = 0.433mm`，是耳轮 2.8mm 的
 15.5%。按 5% 容差反解 **`h ≤ 0.162mm`**（推导见 [SDF数学推导与误差界.md](SDF数学推导与误差界.md) §3）。
-`MeshToSDFGrid` 的 `Band Width` 暗示稀疏窄带存储，内存可能按 4.38MB 而不是 130MB ——
-**这是推断，峰值内存必须在试点里实测**。
+**手册查证后修正**：《网格转为SDF栅格》明确「条带宽度…只有该范围内的体素才存储有意义的带符号距离值」，
+《重构网格修改器》明确「体素：使用 **OpenVDB** …生成流形网格」—— 稀疏窄带不再是推断。
+但手册不给内存数值，`4.38MB` 仍是按表面积的估算，**峰值内存必须在试点里实测**。
 
 整头不仅贵，还会把控制笼、UV、权重、描边一次性全毁掉 → **不做**。
 局部 ROI 是唯一合理形态。
@@ -133,7 +135,7 @@ MUST 按顺序：
 |---|---|
 | 1 | 只取 `head_base()+sculpt()` 与 `ear(-1, M)`，裁到耳周 ROI；**不加载眼睛/头发/服装** |
 | 2 | 各跑 `MeshToSDFGrid`（**Voxel Size `0.000162`**、Band Width 3）—— 0.5mm 已被误差界否决 |
-| 3 | 路 A：UNION → `SDFGridFillet` → `GridToMesh`(Threshold 0, Adaptivity 0)。**Iterations 先标定**：扫描 n、量颈部曲率半径、拟合 `L ≈ h√n`（对 `SDFGridLaplacian/Mean` 成立，Fillet 实现未公开）；`k=2mm @ h=0.162mm` 的理论量级是 **153 轮**，不是 2~4 轮 |
+| 3 | 路 A：UNION → `SDFGridFillet` → `GridToMesh`(Threshold 0, Adaptivity 0)。**Iterations 先标定**：手册《SDF圆角》已给语义（只作用凹角、保体积、迭代↑半径↑），但**不给迭代→半径的定量式**；扫描 n 量颈部曲率半径拟合。`L≈h√n` 是 `SDFGridLaplacian/Mean` 的扩散标度，不能直接套到 Fillet；`k=2mm @ h=0.162mm` 的理论量级 **153 轮**只作上界参考，不是 2~4 轮 |
 | 4 | 出 `out/sdf_probe.json` + 白模对比图 |
 
 判据（不过就停，不在主链上试第三个变体）：
@@ -145,7 +147,7 @@ MUST 按顺序：
 | 法线 | 耳根接缝处相邻面法线突变 <15° |
 | 人眼 | 白模侧视看不到耳根的硬接缝 |
 | 体素误差 | `√3·h/2 ≤ 0.14mm`（5% 耳轮容差） |
-| 成本 | 耗时 / **实测峰值内存**（验证窄带假设）写进报告 |
+| 成本 | 耗时 / **实测峰值内存**（OpenVDB 稀疏场实际占用）写进报告 |
 
 NEVER：
 
