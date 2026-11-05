@@ -1,5 +1,17 @@
 # 变更记录
 
+## 2026-11-05 / v0.20.6 — 硬规则：改模型前先过一遍 Blender 技术手册
+
+BOSS 定规矩。落地成**机器闸门**，不是文档口号。
+
+- 新增 `scripts/manual_gate.py`：校验 `out/flow/<部位>/manual_review.json` —— `queries ≥2`、`pages ≥2` 且每条路径必须真实存在于 `docs/manual/manual.db` 的 `pages.path`（不许编）、`conclusion ≥20` 字、`at` 晚于该部位 `sources` 最新 mtime（源码改了要重查）。命令：`query` / `template` / `record` / `check` / `check-all`
+- `scripts/flow.py`：`GATE_VERSION 2 → 3`；新增 `_manual_gate(part)`，在 `evaluate` 的**所有 builds 之前**判定；未过 → 部位 FAIL 且**不执行任何构建**（避免白改）
+- 六个部位各写一份**真实**查证记录（3 个检索词 / 3 页真实手册 / 基于手册原文的结论），`check-all` **6/6 PASS**
+- `scripts/selftest_flow.py` 加第 4 组：mock 闸门 FAIL 断言 `_run_stream.call_count == 0`、PASS 时 ≥1；**16 项全过**
+- `docs/制作流程.md` §3 加规则 12、新增 §5.1（闸门判据/固定动作/NEVER）与 §5.2；README 加命令
+- 手册索引：`docs/manual/manual.db`（Blender 5.2 LTS 中文版，2356 页 FTS5），项目自带 `rag.py query` 可召回
+- **未改模型**；改文档/判据不算改模型，不过这一闸
+
 ## 2026-11-05 / v0.20.5 — 查离线手册：修正前几轮四处判断
 
 BOSS：「要不你去看看 Blender 手册里」。查的是仓内离线手册 `docs/manual/manual.db`（FTS5，2356 页），

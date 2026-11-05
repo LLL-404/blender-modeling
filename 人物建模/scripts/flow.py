@@ -65,7 +65,7 @@ SUMMARY = os.path.join(OUT, "summary.json")
 MTIME_TOL = 2.0          # 文件系统时间戳容差（秒）
 # 闸门规则版本：改了判定逻辑就 +1，旧记录自动作废。
 # 不直接用 flow.py 的 mtime —— 改注释/打印也会让 6 个部位全部重跑，太吵。
-GATE_VERSION = 2          # v2：min_pass 下限改为 exact_decisions 精确条数；run all 跳过已过闸部位
+GATE_VERSION = 3          # v3：新增「改模型前先过手册」闸门（manual_gate.verify）
 
 _FAIL_RE = re.compile(r"\bFAIL\b")
 _PASS_RE = re.compile(r"\bPASS\b")
@@ -438,6 +438,18 @@ def _calibration_gate():
             "verdict": "PASS", "detail": "参考图与基线均已自检（%s）" % g.get("at")}
 
 
+def _manual_gate(part):
+    """BOSS 2026-11-05 定的硬规则：改模型前先过一遍 Blender 技术手册。
+
+    查证记录 `out/flow/<部位>/manual_review.json` 由 `scripts/manual_gate.py` 校验：
+    检索词 ≥2、手册页 ≥2 且路径真实存在、结论 ≥20 字、时间晚于源码改动。
+    """
+    import manual_gate
+    ok, detail = manual_gate.verify(part["id"], part.get("sources") or [])
+    return {"kind": "manual", "id": "manual", "label": "手册查证",
+            "verdict": "PASS" if ok else "FAIL", "detail": detail}
+
+
 # ---------------------------------------------------------------- 评估
 def evaluate(part, do_build=False, do_probes=False):
     """按工序表判一个部位。do_build 先建，do_probes 先跑探针。"""
@@ -446,6 +458,15 @@ def evaluate(part, do_build=False, do_probes=False):
     evidence = list(part.get("evidence") or [])
     rows = []
     logs = []
+
+    # 手册闸门放在所有构建之前：不过就 FAIL 且**不执行任何 builds**。
+    gate = _manual_gate(part)
+    rows.append(gate)
+    if do_build and gate["verdict"] != "PASS":
+        rows.append({"kind": "build", "id": "build", "label": "构建",
+                     "verdict": "FAIL",
+                     "detail": "手册闸门未过，未执行任何构建（避免白改）"})
+        return _record(part, rows, src_max, evidence, logs)
 
     if do_build:
         for i, cmd in enumerate(part.get("builds") or []):

@@ -30,7 +30,9 @@ python scripts/brief.py briefs/example.json     # brief → profile 受控补丁
 python scripts/visual_gate.py                   # 视觉闸门：当前渲染 vs 参考图 → out/visual_gate.json
 python scripts/flow.py status                   # 工序闸门：6 个部位各自过没过（不跑构建）
 python scripts/flow.py run body                 # 建一个部位 + 跑它的探针 + 判闸门
-python scripts/flow.py run all                  # 按工序推进；已过闸且新鲜的部位跳过重建
+python scripts/manual_gate.py check-all           # 改模型前：6 部位的手册查证记录是否有效
+python scripts/manual_gate.py query "桥接循环边"  # 检索离线手册，拿真实页路径
+python scripts/flow.py run all                  # 按工序推进；手册未过则 FAIL 且不构建
 python scripts/build.py clay                    # 白模四视图（判几何，无描边/无 bloom）
 python scripts/head_baseline.py                 # 头部顶点 hash + 30 条量尺
 python scripts/calibrate_guard.py --verify      # 验证视觉基线判别力并登记（换图用 --calibrate）

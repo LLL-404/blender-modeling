@@ -7,6 +7,7 @@
   1. exact_decisions 精确条数（少一条 / 多一条 / 没登记 都必须 FAIL）
   2. run all 跳过已 PASS 且新鲜的部位（v1 缺陷：每次都重建，复核永远追不上证据）
   3. 基线自检记录缺失 / 对不上时 FAIL，匹配时 PASS
+  4. 手册闸门在**任何构建之前**拦截：未过则 FAIL 且一次构建都不执行
 
 用临时目录伪造一份「已过闸」的部位记录，不碰真实 out/flow。
 """
@@ -143,8 +144,44 @@ def test_calibration():
     return bad
 
 
+def test_manual_gate_blocks_build():
+    """BOSS 2026-11-05 规则：改模型前先过手册；不过就不许构建。"""
+    print("[4] 手册闸门在构建之前拦截")
+    bad = 0
+    part = {"id": "probe", "label": "探针", "sources": [], "evidence": [],
+            "review": [], "gate_files": [], "probes": [], "metrics": [],
+            "producers": [], "artifacts": [],
+            "builds": [["scripts/build.py", "body"]]}
+    fail_gate = {"kind": "manual", "id": "manual", "label": "手册查证",
+                 "verdict": "FAIL", "detail": "缺手册查证记录"}
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "flow")
+        os.makedirs(out, exist_ok=True)
+        with patch.object(flow, "OUT", out), \
+             patch.object(flow, "_manual_gate", return_value=fail_gate), \
+             patch.object(flow, "_run_stream", return_value=(0, "", 0.0)) as run:
+            rec = flow.evaluate(part, do_build=True, do_probes=True)
+        bad += _ok(rec["verdict"] == "FAIL", "手册未过 → 部位 FAIL")
+        bad += _ok(run.call_count == 0, "手册未过 → 一次构建都没执行",
+                   "实际 %d 次" % run.call_count)
+        bad += _ok(any("未执行任何构建" in str(r.get("detail", ""))
+                       for r in rec["rows"]), "报告里写明未执行构建")
+
+        pass_gate = dict(fail_gate, verdict="PASS", detail="已查证")
+        # 临时目录可能在别的盘，_rel() 的 relpath 会跨盘报错 → 测试里替换掉
+        with patch.object(flow, "OUT", out), \
+             patch.object(flow, "_manual_gate", return_value=pass_gate), \
+             patch.object(flow, "_rel", return_value="tmp/log"), \
+             patch.object(flow, "_run_stream", return_value=(0, "", 0.0)) as run2:
+            flow.evaluate(part, do_build=True, do_probes=True)
+        bad += _ok(run2.call_count >= 1, "手册过了 → 构建正常执行",
+                   "实际 %d 次" % run2.call_count)
+    return bad
+
+
 def main():
-    bad = test_exact_decisions() + test_run_all_skip() + test_calibration()
+    bad = (test_exact_decisions() + test_run_all_skip() + test_calibration()
+           + test_manual_gate_blocks_build())
     print("[selftest] %s（%d 项不过）" % ("PASS" if bad == 0 else "FAIL", bad))
     return 0 if bad == 0 else 1
 
