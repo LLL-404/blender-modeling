@@ -126,18 +126,38 @@ def measure():
     sclera = _verts_by_mat(h, "sclera")
     mouth_w = None
     eye_ratio = None
+    eye_w = None
+    eye_aspect = None
     if sclera:
         rx = [c.x for c in sclera if c.x > 0]
         lx = [c.x for c in sclera if c.x < 0]
         inner = min(rx) - max(lx)
         eye_w = (max(rx) - min(rx) + max(lx) - min(lx)) / 2.0
         eye_ratio = inner / eye_w if eye_w else None
+        ehs = [c.z for c in sclera]
+        # ew 已是单眼全宽（almond 的 x = w·cos，跨度 2w），不要乘 2。
+        eye_aspect = ((max(ehs) - min(ehs)) / eye_w) if eye_w else None
     lip = _verts_by_mat(h, "lip")
     if lip:
         mouth_w = max(c.x for c in lip) - min(c.x for c in lip)
 
+    # 灵敏度研究补的量尺：这些之前全缺，导致 eye_h_up / cheek_fwd 被误判成
+    # 「假参数」。颧骨必须只取 x 带，取整个 z 环的 min(y) 会被鼻尖主导。
+    skull_w = max(c.x for c in cos) - min(c.x for c in cos)
+
+    def ring_width(zc, tol=0.008):
+        xs = [c.x for c in cos if abs(c.z - zc) <= tol]
+        return (max(xs) - min(xs)) / skull_w if xs else None
+
+    jaw_w_r = ring_width(headmod.sz(1.440))
+    cheek_w_r = ring_width(headmod.sz(1.472))
+    chin_pts = [c.y for c in cos if c.z < headmod.sz(1.410) and abs(c.x) < 0.020]
+    cheek_pts = [c.y for c in cos if abs(c.z - headmod.sz(1.472)) <= 0.008
+                 and 0.060 <= abs(c.x) <= 0.095 and c.y < 0]
+
     ear = headmod.ear(-1, M)
     ezs = [v.co.z for v in ear.data.vertices]
+    exs = [v.co.x for v in ear.data.vertices]
 
     doc = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -160,11 +180,18 @@ def measure():
             "skull_width": round(head_w, 6),
             "skull_w_over_len": round(head_w / head_len, 6),
             "inner_eye_over_eye_width": round(eye_ratio, 6) if eye_ratio else None,
+            "eye_width_mm": round(1000.0 * eye_w, 3) if eye_w else None,
+            "eye_aspect": round(eye_aspect, 6) if eye_aspect else None,
             "mouth_over_face": round(mouth_w / head_w_full, 6) if mouth_w else None,
             "ear_height_mm": round(1000.0 * (max(ezs) - min(ezs)), 3),
+            "ear_x_span_mm": round(1000.0 * (max(exs) - min(exs)), 3),
             "nose_protrusion_mm": round(nose_mm, 3) if nose_mm is not None else None,
+            "jaw_width_r": round(jaw_w_r, 6) if jaw_w_r else None,
+            "cheek_width_r": round(cheek_w_r, 6) if cheek_w_r else None,
+            "chin_front_y_mm": round(1000.0 * min(chin_pts), 3) if chin_pts else None,
+            "cheek_front_y_mm": round(1000.0 * min(cheek_pts), 3) if cheek_pts else None,
         },
-        "_caliber": "head_width/depth/w_over_len 用含耳的 Head bbox（与 spec/reference.json 同口径）；skull_* 是头骨本体，单独记。",
+        "_caliber": "head_width/depth/w_over_len 用含耳的 Head bbox（与 spec/reference.json 同口径）；skull_* 是头骨本体。cheek_front_y 只取 |x|∈[60,95]mm 的颧骨带，避免被鼻尖主导。",
         "_note": "phase 0 基线。拆 head.py 之后要求 hash 完全一致；归一化阶段允许变，但要逐条报哪些 gauge 动了。",
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

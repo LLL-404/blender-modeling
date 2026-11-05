@@ -796,6 +796,24 @@
     "phase 0 基线：Head hash 34e7af034bb792f6 / skull 4c0a309ab3ecf791（两次一致）",
     "phase 1 拆分 8 模块后：hash 逐位不变，A2 5 条判定不变，probe_cage 通过",
     "phase 2 归一化后：Head a41051ab7e803221 / skull d11a4f8fccec092c；只还原嘴半宽即回到 phase0 的 4c0a309ab3ecf791，证明颅骨变化只来自嘴唇",
-    "phase 2 量尺：内眼角/眼宽 1.1774→0.9305（PASS）、嘴宽/脸宽 10.69%→12.00%（PASS）、耳高 45.819mm 不变、头长/宽/深不变"
-  ]
+    "phase 2 量尺：内眼角/眼宽 1.1774→0.9305（PASS）、嘴宽/脸宽 10.69%→12.00%（PASS）、耳高 45.819mm 不变、头长/宽/深不变",
+    "数学模型研究（docs/数学模型与灵敏度.md）：scripts/sensitivity.py 实测 12 参数 × 16 量尺；解析雅可比与实测一致（眼距 ±0.415 vs −0.419），发现鼻尖超线性(+0.273)与鼻梁反向耦合(−0.017)",
+    "补量尺后 12/12 参数全部可测：eye_aspect、颧骨 x 带专属 y、下巴 y、耳 x 跨度、下颌/颧骨环宽接入 scripts/head_baseline.py",
+    "phase 3 第一次尝试失败并回退：叠加眼球/眼睑导致近共面 z-fighting（白模+彩渲双证据）；ENABLE_VOLUME=False，hash 回到 a41051ab7e803221；正确方向是换球面表示法而非叠加",
+    "新增 scripts/render_clay.py：中性灰无描边白模四视图 + 眼部近景，补上「判几何用彩渲」的缺陷"
+  ],
+  "_sensitivity": {
+    "report": "out/sensitivity.json",
+    "script": "scripts/sensitivity.py",
+    "rule": "NO-GAUGE 先怀疑量尺，再怀疑参数；第一次扫描的 2 个 NO-GAUGE 全是量尺缺失",
+    "weak_params": [
+      "jaw.jaw_inset_mm (|S|=0.002)",
+      "cheek.cheek_out_mm (|S|=0.004)"
+    ],
+    "coupled": [
+      "nose.tip_fwd_mm 超线性 +0.273",
+      "nose.bridge_h_mm 反向 −0.017",
+      "ear.rim_mm 影响 head_width +0.005"
+    ]
+  }
 }
