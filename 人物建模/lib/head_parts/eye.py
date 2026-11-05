@@ -68,6 +68,20 @@ def _surface(bvh, cx, cz, w, hu, hd):
     return S
 
 
+def surface_for(bvh, side):
+    """对外导出：给 `face_detail.py` 的眼周线稿用同一张 S，避免各贴各的。
+
+    返回值是 `(S(x,z), cx, cz, w, hu, hd)`，参数口径与 `make_eye_volume` 完全一致。
+    线稿必须调这个而不是自己 conform 到颅骨 BVH —— 颅骨 BVH 比 S 靠后
+    1.8~3.0mm，直接贴会在眼周留下细碎白点（v0.19.0 遗留）。
+    """
+    s = side
+    k = B.eye_size()
+    cx, cz = B.eye_x() * s, B.sz(1.500)
+    w, hu, hd = B.EYE_W * k, B.EYE_HU * k, B.EYE_HD * k
+    return _surface(bvh, cx, cz, w, hu, hd), cx, cz, w, hu, hd
+
+
 def _recalc(ob):
     bm = bmesh.new()
     bm.from_mesh(ob.data)
@@ -115,7 +129,15 @@ def _eyeball_shell(outline, S, cx, cz, name, mat):
 
 
 def _disc(cx, cz, r, S, delta, name, mat, segs=32):
-    """贴在共享曲面 S 上的圆盘（虹膜/瞳孔/高光），δ 是显式深度。"""
+    """贴在共享曲面 S 上的圆盘（虹膜/瞳孔/高光），δ 是显式深度。
+
+    2026-11-05 试过给圆盘也加同心环精确采样，想消掉白模里的扇形亮斑，
+    **实测无效已回退**：斑块的根因不是插值误差，而是虹膜半径
+    `w*EYE_IRIS_R ≈ 14.9mm` 大于眼裂下高 `EYE_HD ≈ 10.2mm`，圆盘下缘
+    超出 almond 轮廓约 2.2mm，超出部分贴在眼窝上形成一条弧。
+    要消掉得做「虹膜被眼睑裁切」（多边形裁剪），属于新的表示法改动，
+    不在此轮叠加。见 docs/数学模型与灵敏度.md §5.3。
+    """
     pts = B.circle(cx, cz, r, segs)
     verts = [(cx, S(cx, cz) - delta, cz)]
     verts += [(p.x, S(p.x, p.z) - delta, p.z) for p in pts]

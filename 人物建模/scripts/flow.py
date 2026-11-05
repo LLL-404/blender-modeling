@@ -65,7 +65,7 @@ SUMMARY = os.path.join(OUT, "summary.json")
 MTIME_TOL = 2.0          # 文件系统时间戳容差（秒）
 # 闸门规则版本：改了判定逻辑就 +1，旧记录自动作废。
 # 不直接用 flow.py 的 mtime —— 改注释/打印也会让 6 个部位全部重跑，太吵。
-GATE_VERSION = 1
+GATE_VERSION = 2          # v2：min_pass 下限改为 exact_decisions 精确条数；run all 跳过已过闸部位
 
 _FAIL_RE = re.compile(r"\bFAIL\b")
 _PASS_RE = re.compile(r"\bPASS\b")
@@ -178,6 +178,22 @@ def _probe_rows(text):
     return rows
 
 
+def _decision_detail(probe, n_total):
+    """判定条数必须精确对上工序表；下限只能防全空，防不了探针悄悄缩水。
+
+    v1 用 min_pass（下限）：A1 实判 18 条却只要求 ≥15，少判 3 条照样绿。
+    v2 改 exact_decisions：原始 PASS+FAIL 行数（例外过滤前）必须**等于**登记值；
+    探针加一条或删一条判据都要同步改 spec/parts.json，否则直接红。
+    """
+    exp = probe.get("exact_decisions")
+    if exp is None:
+        return "探针没登记 exact_decisions，工序表缺判据条数 —— 拒绝判 PASS"
+    if n_total != int(exp):
+        return ("判定条数 %d ≠ 登记 %d（探针加/删判据要同步改 "
+                "spec/parts.json 的 exact_decisions）" % (n_total, int(exp)))
+    return None
+
+
 # ---------------------------------------------------------------- 闸门项
 def _exception_hit(text, exceptions, today=None):
     """返回命中的例外 dict；过期例外不算命中。"""
@@ -207,6 +223,8 @@ def _probe_gate(part, probe, build_log):
         [blender, "-b", "--factory-startup", "--python-exit-code", "1",
          "--python", path], log, "probe:" + probe["id"])
     rows = _probe_rows(text)
+    n_total = len(rows)          # 例外过滤前的原始判定条数
+    decision_problem = _decision_detail(probe, n_total)
     n_pass = sum(r["verdict"] == "PASS" for r in rows)
     n_fail = sum(r["verdict"] == "FAIL" for r in rows)
     crash = code != 0 or _TRACEBACK in text
@@ -235,8 +253,8 @@ def _probe_gate(part, probe, build_log):
         verdict, detail = "FAIL", "零判定（PASS=0 FAIL=0）——探针没在判，等同于没过"
     elif n_fail:
         verdict, detail = "FAIL", "%d PASS / %d FAIL" % (n_pass, n_fail)
-    elif n_pass < int(probe.get("min_pass", 1)):
-        verdict, detail = "FAIL", "判定数不足：%d PASS < %d" % (n_pass, probe.get("min_pass", 1))
+    elif decision_problem:
+        verdict, detail = "FAIL", decision_problem
     else:
         verdict, detail = "PASS", "%d PASS / 0 FAIL" % n_pass
     if excused:
@@ -380,6 +398,46 @@ def _review_rows(part, evidence):
     return rows, state, at
 
 
+def _calibration_gate():
+    """视觉基线必须经 calibrate_guard.py 自检，且参考图/校准时间没变。
+
+    v1 缺陷：`--calibrate` 直接覆盖基线，门槛会自动变松（换银发图后脸密度
+    基线掉 44%），流程不要求任何人证明判据还有判别力。
+    """
+    import hashlib
+
+    def bad(detail):
+        return {"kind": "calibration", "id": "calibration", "label": "基线自检",
+                "verdict": "FAIL", "detail": detail}
+
+    try:
+        cfg = _load(VG_SPEC)
+    except Exception as exc:
+        return bad("读不了 spec/visual_gate.json：%s" % exc)
+    guard = os.path.join(OUT, "calibrate_guard.json")
+    if not os.path.isfile(guard):
+        return bad("缺自检记录，先跑 python scripts/calibrate_guard.py --verify")
+    try:
+        g = _load(guard)
+    except Exception as exc:
+        return bad("自检记录读不了：%s" % exc)
+    if g.get("selftest") != "PASS":
+        return bad("自检记录里 selftest 不是 PASS")
+    if g.get("calibrated_at") != cfg.get("_calibrated_at"):
+        return bad("基线重算过但没重跑自检（%s → %s）"
+                   % (g.get("calibrated_at"), cfg.get("_calibrated_at")))
+    if g.get("reference_image") != cfg.get("reference_image"):
+        return bad("参考图路径换了但没重跑 --calibrate")
+    ref = os.path.join(ROOT, cfg.get("reference_image", ""))
+    if not os.path.isfile(ref):
+        return bad("参考图不存在：%s" % cfg.get("reference_image"))
+    md5 = hashlib.md5(open(ref, "rb").read()).hexdigest()
+    if g.get("reference_md5") != md5:
+        return bad("参考图内容变了但没重跑 --calibrate")
+    return {"kind": "calibration", "id": "calibration", "label": "基线自检",
+            "verdict": "PASS", "detail": "参考图与基线均已自检（%s）" % g.get("at")}
+
+
 # ---------------------------------------------------------------- 评估
 def evaluate(part, do_build=False, do_probes=False):
     """按工序表判一个部位。do_build 先建，do_probes 先跑探针。"""
@@ -440,6 +498,10 @@ def evaluate(part, do_build=False, do_probes=False):
     for item in part.get("artifacts") or []:
         rows.append(_artifact_gate(part, item))
 
+    # 参考图基线是全项目共用的前提，每个部位都验一次：换图/重算基线后，
+    # 不该出现「某个部位还拿旧基线判过了」。
+    rows.append(_calibration_gate())
+
     for m in part.get("metrics") or []:
         rows.append(_metric_gate(part, m))
 
@@ -453,6 +515,8 @@ def evaluate(part, do_build=False, do_probes=False):
 def _probe_row_from_log(part, probe, text, log):
     """check 模式：用已有日志重算判定（不重跑探针）。"""
     rows = _probe_rows(text)
+    n_total = len(rows)          # 例外过滤前的原始判定条数
+    decision_problem = _decision_detail(probe, n_total)
     n_pass = sum(r["verdict"] == "PASS" for r in rows)
     n_fail = sum(r["verdict"] == "FAIL" for r in rows)
     excused, kept = [], []
@@ -472,8 +536,8 @@ def _probe_row_from_log(part, probe, text, log):
         verdict, detail = "FAIL", "零判定（PASS=0 FAIL=0）"
     elif n_fail:
         verdict, detail = "FAIL", "%d PASS / %d FAIL" % (n_pass, n_fail)
-    elif n_pass < int(probe.get("min_pass", 1)):
-        verdict, detail = "FAIL", "判定数不足：%d PASS < %d" % (n_pass, probe.get("min_pass", 1))
+    elif decision_problem:
+        verdict, detail = "FAIL", decision_problem
     else:
         verdict, detail = "PASS", "%d PASS / 0 FAIL" % n_pass
     if excused:
@@ -700,8 +764,23 @@ def main(argv=None):
         return 2
 
     todo = parts if a.part == "all" else [by_id[a.part]]
+    # run all：已过闸且源码/判据/证据/复核都新鲜的部位不重建。
+    # 否则每跑一次都把证据图刷新成比 review.json 新，复核永远「早于证据」，
+    # 多部位连续推进会卡死在第一个部位（v1 缺陷）。
+    recs = load_records(spec) if (a.part == "all" and a.cmd == "run") else {}
     last = 0
     for part in todo:
+        if a.part == "all" and a.cmd == "run":
+            old = recs.get(part["id"])
+            fresh = (old and old.get("verdict") == "PASS"
+                     and not _stale_reason(part, old)
+                     and _review_state(part, part.get("evidence") or [])[0] == "OK")
+            if fresh:
+                print()
+                print("[flow] ======== %s（%s）========" % (part["label"], part["id"]))
+                print("[flow] %s -> SKIP（已过闸且新鲜：%s）" % (part["id"], old["generated"]))
+                last = 0
+                continue
         print()
         print("[flow] ======== %s（%s）========" % (part["label"], part["id"]))
         if a.cmd == "run":

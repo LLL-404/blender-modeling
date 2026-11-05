@@ -30,6 +30,10 @@ python scripts/brief.py briefs/example.json     # brief → profile 受控补丁
 python scripts/visual_gate.py                   # 视觉闸门：当前渲染 vs 参考图 → out/visual_gate.json
 python scripts/flow.py status                   # 工序闸门：6 个部位各自过没过（不跑构建）
 python scripts/flow.py run body                 # 建一个部位 + 跑它的探针 + 判闸门
+python scripts/flow.py run all                  # 按工序推进；已过闸且新鲜的部位跳过重建
+python scripts/build.py clay                    # 白模四视图（判几何，无描边/无 bloom）
+python scripts/head_baseline.py                 # 头部顶点 hash + 30 条量尺
+python scripts/calibrate_guard.py --verify      # 验证视觉基线判别力并登记（换图用 --calibrate）
 python scripts/deliver.py                       # 一句话：进游戏 / 进作品集，现在行不行
 ```
 
@@ -78,7 +82,7 @@ A2/C 两个探针当时是纯信息探针（`PASS=0 SKIP=14` / `PASS=0 SKIP=35`�
 
 | 项 | 值 |
 |---|---|
-| 参考图 | `spec/reference/1000139587.jpg`（已入仓，原先只在剪贴板临时目录） |
+| 参考图 | `spec/reference/概念图-银发旗袍-v1.png`（2026-11-05 换靶；旧图 `1000139587.jpg` 保留作历史）。判据与分割配置的唯一来源是 `spec/visual_gate.json`，换图只改它的 `reference_image`，然后必须跑 `python scripts/calibrate_guard.py --calibrate`，并同步 `spec/reference.json`、`spec/parts.json` 的复核文字、`docs/制作流程.md` 的当前状态 |
 | 当前渲染 | `out/visual_front.png`，固定 `m5_face_front` 机位，比 `美女.blend` 旧时自动重渲染 |
 | 归一化 | 两张图各自按「粉色头发」包围盒裁切 → 统一缩放到 512 宽，否则 Canny/FFT 不可比 |
 | 判据 | 头发明暗层次 ≥ 参考×0.60；条纹周期性 ≤ 参考×1.80；脸部细节密度 ≥ 参考×0.60 |
@@ -86,8 +90,10 @@ A2/C 两个探针当时是纯信息探针（`PASS=0 SKIP=14` / `PASS=0 SKIP=35`�
 | 基线 | 由参考图自身算出（`--calibrate`）；阈值由参考图 + 明确坏例共同定，禁止照当前模型反调 |
 
 ```bash
-python scripts/visual_gate.py --calibrate   # 换参考图后才需要
-python scripts/visual_gate.py --selftest    # 负控制：原图全 PASS、抹平细节的退化图 ≥2 FAIL
+python scripts/calibrate_guard.py --calibrate  # 换参考图才需要：重算基线 + 自检，不过就回滚
+python scripts/calibrate_guard.py --verify     # 只验现有基线（不写 spec）
+# 上面两条内部会跑 visual_gate.py --calibrate / --selftest；不要直接调 --calibrate，
+# 它会绕过负控制自检，门槛变松了没人拦。
 python scripts/visual_gate.py               # 判定 → out/visual_gate.json
 ```
 

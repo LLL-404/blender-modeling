@@ -43,7 +43,8 @@
           "id": "a1",
           "label": "A1 手/脚趾",
           "script": "_stageA/a1_hand_probe.py",
-          "min_pass": 15
+          "exact_decisions": 18,
+          "note": "v2：原始 PASS+FAIL 行数（例外过滤前）必须精确等于 18；v1 的 min_pass=15 是下限，挡不住探针缩水"
         }
       ],
       "metrics": [],
@@ -66,6 +67,10 @@
         [
           "scripts/build.py",
           "look"
+        ],
+        [
+          "scripts/build.py",
+          "clay"
         ]
       ],
       "sources": [
@@ -79,7 +84,9 @@
         "lib/shots.py",
         "cfg.py",
         "params/profile.json",
-        "lib/head_parts"
+        "lib/head_parts",
+        "scripts/render_clay.py",
+        "lib/head_parts/eye.py"
       ],
       "gate_files": [
         "spec/face.json"
@@ -88,29 +95,52 @@
         "out/m3_face_front.png",
         "out/m3_face_q34.png",
         "out/m3_face_side.png",
-        "out/m3_upper.png"
+        "out/m3_upper.png",
+        "out/clay_face_front.png",
+        "out/clay_face_side.png",
+        "out/clay_face_34.png",
+        "out/clay_face_eye_closeup.png"
       ],
       "probes": [
         {
           "id": "a2",
           "label": "A2 五官几何",
           "script": "_stageA/a2_face_probe.py",
-          "min_pass": 4
+          "exact_decisions": 5,
+          "note": "v2：原始 PASS+FAIL 行数（例外过滤前）必须精确等于 5；v1 的 min_pass=4 是下限，挡不住探针缩水"
         },
         {
           "id": "c",
           "label": "C 三渲二",
           "script": "_stageC/c_probe.py",
-          "min_pass": 5
+          "exact_decisions": 8,
+          "note": "v2：原始 PASS+FAIL 行数（例外过滤前）必须精确等于 8；v1 的 min_pass=5 是下限，挡不住探针缩水"
         }
       ],
       "metrics": [],
       "review": [
         "脸型：下颌线从耳下到下巴连续，颧骨不过分外扩，下巴不尖成锥",
         "五官齐全且位置合理：双眼、眉、鼻、嘴、耳都在，左右高度一致",
-        "侧面：鼻梁/鼻尖/嘴唇/下巴有体积，不是贴在壳上的薄片",
-        "眼睛：虹膜、瞳孔、睫毛分得清，不糊成一团"
-      ]
+        "白模侧视：鼻梁/鼻尖/嘴唇/下巴有真实体积与转折，不是贴在壳上的薄片",
+        "彩渲正面：虹膜、瞳孔、睫毛分得清，不糊成一团；眼周无锯齿缝线与碎白点",
+        "白模四视图（正/侧/34/眼近景）：颅骨连续，无破面、黑洞、漂浮碎片；对照 spec/head_parts.json 的颅骨/下颌/颧骨/眼四项 L2 清单",
+        "白模眼近景：眼球有凸出体积、上下眼睑有厚度与转折，左右对称"
+      ],
+      "evidence_geom": [
+        "out/clay_face_front.png",
+        "out/clay_face_side.png",
+        "out/clay_face_34.png",
+        "out/clay_face_eye_closeup.png"
+      ],
+      "review_kinds": [
+        "look",
+        "look",
+        "geom",
+        "look",
+        "geom",
+        "geom"
+      ],
+      "_evidence_rule": "evidence 含彩渲与白模两套；kind=geom 的复核条目只看 clay_*（无描边/无 bloom/无 alpha），kind=look 的只看 m3_*。白模脚本主动隐藏 FaceLines，所以线稿干净与否必须看彩渲。"
     },
     {
       "id": "hair",
@@ -148,7 +178,8 @@
           "id": "d",
           "label": "D 发型细节",
           "script": "_stageD/d_probe.py",
-          "min_pass": 9
+          "exact_decisions": 11,
+          "note": "v2：原始 PASS+FAIL 行数（例外过滤前）必须精确等于 11；v1 的 min_pass=9 是下限，挡不住探针缩水"
         }
       ],
       "metrics": [
@@ -211,7 +242,8 @@
           "id": "a4",
           "label": "A4 服装净空",
           "script": "_stageA/a4_fit_probe.py",
-          "min_pass": 10
+          "exact_decisions": 11,
+          "note": "v2：原始 PASS+FAIL 行数（例外过滤前）必须精确等于 11；v1 的 min_pass=10 是下限，挡不住探针缩水"
         }
       ],
       "metrics": [],
@@ -264,7 +296,6 @@
           "id": "b",
           "label": "B 骨架/权重",
           "script": "_stageB/b_probe.py",
-          "min_pass": 28,
           "exceptions": [
             {
               "contains": "R4 finger_bend",
@@ -272,7 +303,9 @@
               "todo": "剩余 0.018 要重做手部权重带，不是调参能到。",
               "expires": "2026-12-31"
             }
-          ]
+          ],
+          "exact_decisions": 32,
+          "note": "v2：原始 PASS+FAIL 行数（例外过滤前）必须精确等于 32；v1 的 min_pass=28 是下限，挡不住探针缩水"
         }
       ],
       "artifacts": [

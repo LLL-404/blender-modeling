@@ -1,5 +1,27 @@
 # 变更记录
 
+## 2026-11-05 / v0.20.0 — 工序止血 + 线稿去重 + 量尺补齐
+
+**流程（v2 闸门，GATE_VERSION 1 → 2）**
+
+| 改动 | 内容 |
+|---|---|
+| `run all` 跳过已过闸且新鲜的部位 | 修掉「每跑一次都重建 → 证据永远比 review.json 新 → 卡死在第一个部位」 |
+| `min_pass` → `exact_decisions` | 原始判定条数必须精确相等；A1/v1 实判 18 只要求 ≥15，少判 3 条照样绿。六个探针登记 18/5/8/11/11/32 |
+| 基线自检闸门 | 新增 `scripts/calibrate_guard.py`（`--calibrate` 备份→重算→自检→不过回滚；`--verify` 只验不改）。`flow._calibration_gate` 校验参考图 md5 与 `_calibrated_at`；禁止直接 `--calibrate` |
+| 换靶清单 | `docs/制作流程.md` §8.5 八项；`scripts/fit_silhouette.py` 的 REF 与 `hair_mask` 改读 `spec/visual_gate.json`，不再写死旧粉发图；README / 外部项目研究文档同步 |
+| 白模进工序 | `scripts/build.py clay` 新步骤；face 的 builds/evidence/review 加 `clay_*` 四图，复核条目分 geom/look，几何条目引用 `spec/head_parts.json` L2 清单 |
+| 自检 | 新增 `scripts/selftest_flow.py`：11 项覆盖精确条数、SKIP、记录过期/复核缺失时不跳过、基线闸门 |
+
+**建模**
+
+- `lib/face_detail.py`：实体眼模式下不再生成眼部线稿（原先与 `eye.py` 的睫毛/眼睑/虹膜重复，贴 S 后悬在眼白前 3.8mm，彩渲成一圈锯齿缝线）。眼宽/眼高/眉跨度/嘴半宽改读 `_base` 当前值；回退模式保留原 BVH 路径。眼周与嘴角碎白点消失，Head hash 保持 `c91c9426de253783`。
+- `eye.py` 导出 `surface_for()` 备用；`_disc` 同心环采样试过**无效已回退** —— 白模扇形弧的根因是虹膜半径 14.9mm > 眼裂下高 10.2mm，不是插值误差。见 `docs/数学模型与灵敏度.md` §5.3。
+- `scripts/head_baseline.py` 量尺 **20 → 30**：新增 `socket_depth 5.162mm`、`eye_tilt 0.2265`、`nose_width 0.113`、`lip_protrusion −6.987mm`、三条对称量尺（全 0）、唇/鼻前缘等。socket/nose 用双构建差分几何实测，不读常量。合同 `spec/head_parts.json` 同步登记，剩余 8 条 TODO 单独列出。
+- 实测发现（未改几何）：`eye_tilt 22.65%` 超合同 10~20%；`lip_protrusion` 是 −6.99mm，下巴反而比唇前 6.99mm，与合同方向相反；`jaw_width 0.751`/`cheek_width 0.931` 也越界。这些合同目标未经参考图校准，标 FAIL 只表示与设计初值不符。
+
+**验收**：`head_baseline --check` 两次一致 `c91c9426de253783`；A2 5 PASS/0 FAIL；`selftest_flow` 11/11；`calibrate_guard --verify` 原图 0 FAIL / 退化图 2 FAIL。`flow status` 0/6 过闸（body 手、face 三渲二、rig/asset 过期），`check.py` 73 PASS / 12 FAIL / 0 HOLE，`deliver.py` 两个目标都不行 —— 均为既有缺陷，流程改造只负责让它们不再被算成绿。
+
 ## 2026-11-05 / v0.19.0 — phase 3 换表示法成功（眼睛实体化）
 
 上一轮「贴片上叠眼球/眼睑」因近共面 z-fighting 失败回退。本轮按

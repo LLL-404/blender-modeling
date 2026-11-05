@@ -5,7 +5,7 @@
 ------
 不是「再渲染一张图看看像不像」，而是把「像不像」变成一个可求解的量：
 
-  1. 参考图与当前渲染各自分割出粉色头发（复用 visual_gate 的种子分割）
+  1. 参考图与当前渲染各自分割出头发（复用 visual_gate 的分割；配置读 spec/visual_gate.json）
   2. 两边都按「头发包围盒高度」归一化、水平居中，缩放到同一高度
   3. 算剪影 IoU —— 形状重合度，0~1
   4. 在「横向缩放 × 纵向平移」上做小网格搜索，找 IoU 最大的仿射对齐，
@@ -41,7 +41,12 @@ sys.path.insert(0, HERE)
 
 import visual_gate as vg
 
-REF = os.path.join(ROOT, "spec", "reference", "1000139587.jpg")
+# 2026-11-05 换靶复盘：原来写死 1000139587.jpg，且 hair_mask 走默认的
+# profile="pink"。换成银白发概念图后，粉发掩码套银发图必然分割失败。
+# 现在参考图与分割配置**唯一来源**都是 spec/visual_gate.json，换图只改那一处。
+_CFG = json.load(open(os.path.join(ROOT, "spec", "visual_gate.json"), encoding="utf-8"))
+REF = os.path.join(ROOT, _CFG["reference_image"])
+MCFG = _CFG.get("hair_mask")
 CUR = os.path.join(ROOT, "out", "visual_front.png")
 OUT = os.path.join(ROOT, "out")
 
@@ -49,9 +54,9 @@ NORM_H = 256          # 归一化后的剪影高度（像素）
 NORM_W = 256          # 画布宽度；两侧留白，宽度差异会体现在 IoU 上
 
 
-def mask_of(path):
+def mask_of(path, is_reference=False):
     bgr = vg.imread(path)
-    m, area = vg.hair_mask(bgr)
+    m, area = vg.hair_mask(bgr, MCFG, is_reference=is_reference)
     if area < 800:
         raise SystemExit("头发分割失败：%s 只有 %d 像素" % (path, area))
     return m.astype(np.uint8)
@@ -122,8 +127,8 @@ def main():
                     help="把建议的宽度系数写进 params/profile.json")
     args = ap.parse_args()
 
-    ref, ref_wh, ref_bb = norm_silhouette(mask_of(REF))
-    cur, cur_wh, cur_bb = norm_silhouette(mask_of(CUR))
+    ref, ref_wh, ref_bb = norm_silhouette(mask_of(REF, is_reference=True))
+    cur, cur_wh, cur_bb = norm_silhouette(mask_of(CUR, is_reference=False))
     base = iou(ref, cur)
 
     scales = [round(0.80 + 0.01 * i, 3) for i in range(41)]     # 0.80 ~ 1.20

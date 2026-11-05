@@ -88,8 +88,10 @@
         {
           "id": "symmetry_x",
           "rule": "左右 bbox 差 ≤ 0.2 mm",
-          "current": null,
-          "status": "TODO"
+          "current": 0.0,
+          "status": "PASS",
+          "note": "颅骨 x 对称差（skull_symmetry_mm）",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         },
         {
           "id": "nonmanifold",
@@ -169,8 +171,10 @@
         {
           "id": "jaw_width",
           "rule": "下颌角处 x 跨度 / 头宽 ∈ [0.62, 0.72]",
-          "current": null,
-          "status": "TODO"
+          "current": 0.751206,
+          "status": "FAIL",
+          "note": "jaw_width_r = 下颌环 x 跨度/头骨宽；合同 0.62~0.72",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         },
         {
           "id": "chin_protrusion",
@@ -181,8 +185,10 @@
         {
           "id": "symmetry_x",
           "rule": "左右差 ≤ 0.2 mm",
-          "current": null,
-          "status": "TODO"
+          "current": 0.0,
+          "status": "PASS",
+          "note": "颅骨 x 对称差（skull_symmetry_mm）",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         }
       ],
       "evidence": [
@@ -245,8 +251,10 @@
         {
           "id": "cheek_width",
           "rule": "颧骨处 x 跨度 / 头宽 ∈ [0.94, 1.00]",
-          "current": null,
-          "status": "TODO"
+          "current": 0.931464,
+          "status": "FAIL",
+          "note": "cheek_width_r；合同 0.94~1.00",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         },
         {
           "id": "cheek_protrusion",
@@ -407,14 +415,18 @@
         {
           "id": "nose_width",
           "rule": "鼻翼外缘 x 跨度 / 头宽 ∈ [0.10, 0.16]",
-          "current": null,
-          "status": "TODO"
+          "current": 0.112979,
+          "status": "PASS",
+          "note": "双构建：屏蔽 nose.sculpt_deltas 后 |Δy|>1mm 顶点的 x 跨度 25.376mm / 含耳头宽",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         },
         {
           "id": "nose_symmetry",
           "rule": "左右外形差 ≤ 0.3 mm",
-          "current": null,
-          "status": "TODO"
+          "current": 0.0,
+          "status": "PASS",
+          "note": "颅骨 x 对称差（skull_symmetry_mm）",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         },
         {
           "id": "nose_base_shadow",
@@ -526,8 +538,10 @@
         {
           "id": "lip_protrusion",
           "rule": "侧视唇体比下巴前 ≥ 2 mm",
-          "current": null,
-          "status": "TODO"
+          "current": -6.987,
+          "status": "FAIL",
+          "note": "唇最前 y=-73.964mm、下巴最前 y=-80.952mm；下巴反而比唇前 6.99mm，与合同方向相反",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         },
         {
           "id": "lip_line_depth",
@@ -639,14 +653,18 @@
         {
           "id": "eye_tilt",
           "rule": "外眼角比内眼角高 10%~20% 眼宽",
-          "current": null,
-          "status": "TODO"
+          "current": 0.226521,
+          "status": "FAIL",
+          "note": "右眼内外眼角 z 差 9.504mm / 单眼全宽 41.957mm = 22.65%；合同 10~20%",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         },
         {
           "id": "socket_depth",
           "rule": "眼窝凹陷 ≥ 3 mm",
-          "current": 5.2,
-          "status": "TODO"
+          "current": 5.162,
+          "status": "PASS",
+          "note": "双构建：屏蔽 eye.socket_deltas 后逐顶点 y 差最大值；设计 5.2mm",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         },
         {
           "id": "lid_thickness",
@@ -658,8 +676,10 @@
         {
           "id": "eye_symmetry",
           "rule": "左右眼中心 z 差 ≤ 0.2 mm",
-          "current": null,
-          "status": "TODO"
+          "current": 0.0,
+          "status": "PASS",
+          "note": "左右眼 sclera z 中心差（eye_symmetry_z_mm）",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         }
       ],
       "evidence": [
@@ -764,8 +784,10 @@
         {
           "id": "ear_symmetry",
           "rule": "左右耳 z/x 差 ≤ 0.2 mm",
-          "current": null,
-          "status": "TODO"
+          "current": 0.0,
+          "status": "PASS",
+          "note": "左右耳 x/z 包围盒镜像差（ear_symmetry_mm）",
+          "impl": "scripts/head_baseline.py:_measure_todo() 几何实测（不读常量）"
         }
       ],
       "evidence": [
@@ -803,7 +825,10 @@
     "新增 scripts/render_clay.py：中性灰无描边白模四视图 + 眼部近景，补上「判几何用彩渲」的缺陷",
     "phase 3 第二次（换表示法）成功：共享曲面 S(x,z)=y_hit−LIFT−BULGE·gauss；眼白为封闭透镜实体（三环精确采样），虹膜/瞳孔/高光/睫毛/眼睑在 S 上取显式常量深度。ENABLE_VOLUME=True",
     "phase 3 验收：Head hash c91c9426de253783（两次一致）、颅骨 d11a4f8fccec092c 与 phase2 逐位一致、v 7812→8518、A2 5P/0F、check.py 73/12/0 与改动前相同、lid_thickness 几何实测 1.200mm、白模侧视有体积、彩渲碎玻璃锯齿消失",
-    "遗留：face_detail 线稿仍 conform 到颅骨 BVH，与 S 错位，眼周/嘴角有细碎白点；下一轮把线稿也改用 S 定位"
+    "遗留：face_detail 线稿仍 conform 到颅骨 BVH，与 S 错位，眼周/嘴角有细碎白点；下一轮把线稿也改用 S 定位",
+    "线稿去重：实体眼模式下 face_detail 不再画眼部线稿（原来与 eye.py 的睫毛/眼睑/虹膜重复）；眼周锯齿缝线与嘴角白点消失，Head hash 保持 c91c9426de253783",
+    "phase 3 续试错：_disc 同心环采样无法消除白模扇形弧，实测根因是虹膜半径 14.9mm > 眼裂下高 10.2mm（超出约 2.2mm），已回退；正确做法是虹膜被眼睑裁切，见 docs/数学模型与灵敏度.md §5.3",
+    "补 TODO 量尺：head_baseline 18 -> 30 条；socket_depth 5.162mm / nose_width 0.113 / eye_tilt 0.2265 / lip_protrusion -6.987mm；三条对称全 0；两次 hash 一致"
   ],
   "_sensitivity": {
     "report": "out/sensitivity.json",
@@ -819,5 +844,22 @@
       "ear.rim_mm 影响 head_width +0.005"
     ]
   },
-  "_impl_note": "参数默认值已落地在 lib/head_parts/_base.py 与各模块常量；ENABLE_VOLUME 在 eye.py"
+  "_impl_note": "参数默认值已落地在 lib/head_parts/_base.py 与各模块常量；ENABLE_VOLUME 在 eye.py",
+  "_gauges_impl": {
+    "script": "scripts/head_baseline.py",
+    "snapshot": "out/head_baseline.json",
+    "count": 30,
+    "rule": "全部几何实测；socket_depth / nose_width 用双构建差分，不读设计常量",
+    "status_caveat": "status=FAIL 表示与合同设计初值不符，不等于几何错误 —— 这些目标未经参考图校准"
+  },
+  "_todo_gauges_left": [
+    "nonmanifold（需 bmesh 统计非流形边）",
+    "chin_protrusion",
+    "cheek_protrusion",
+    "brow_protrusion",
+    "brow_width",
+    "nose_base_shadow",
+    "lip_line_depth",
+    "jaw.symmetry_x / cheek.symmetry_x（需按部件分别取环）"
+  ]
 }

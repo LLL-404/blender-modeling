@@ -6,6 +6,7 @@
     python scripts/build.py body            # 只跑 m1_body.py
     python scripts/build.py head            # m2_head.py
     python scripts/build.py look            # m3_look.py
+    python scripts/build.py clay            # scripts/render_clay.py（白模四视图，判几何用）
     python scripts/build.py hair            # m4_hair.py
     python scripts/build.py outfit          # m5_outfit.py
     python scripts/build.py rig             # m5_rig.py（含 B4 回归断言）
@@ -43,6 +44,8 @@ STEPS = {
     "body": ("m1_body.py", "身体素模 + 四视图 + 手部近景"),
     "head": ("m2_head.py", "头与五官"),
     "look": ("m3_look.py", "三渲二着色/描边验收"),
+    # clay 不并入 ALL_ORDER：它是 face 部位的几何证据，由 flow 单独调用。
+    "clay": ("scripts/render_clay.py", "白模四视图（无描边/无 bloom/无 alpha）"),
     "hair": ("m4_hair.py", "头发"),
     "outfit": ("m5_outfit.py", "服装"),
     "rig": ("m5_rig.py", "45 骨骨架 + 4 姿势 + 回归断言"),
@@ -184,7 +187,7 @@ def main(argv=None):
         prog="build.py",
         description="人物建模统一构建入口（body|head|look|hair|outfit|rig|asset|check|aux|all|archive）")
     parser.add_argument("step",
-                        choices=list(ALL_ORDER) + ["asset", "check", "measure", "aux",
+                        choices=list(ALL_ORDER) + ["clay", "asset", "check", "measure", "aux",
                                                    "all", "archive"],
                         help="构建步骤；all = 依次跑 m1 -> m5_rig（不含 asset）")
     parser.add_argument("--nool", action="store_true",

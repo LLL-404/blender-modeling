@@ -26,17 +26,35 @@ solidify 后每条线是封闭连通块，不给 Head 增加非流形边（head.
 fan/band 开放贴片造成的 628 条由资产化阶段统一修）。
 
 坐标口径与 `head.py` 完全一致：z 过 `head.sz()`，x 用米制字面量，左右镜像 x。
+
+phase 3 续（2026-11-05）
+------------------------
+实体眼（`eye.ENABLE_VOLUME=True`）已经自带睫毛带、下眼缘、上下眼睑、虹膜、
+瞳孔、高光。本文件原本又画了 14 根上睫毛 + 9 根下睫毛 + 双眼皮褶 + 卧蚕 +
+两道虹膜弧 —— **两套结构重复**。试过把线稿改贴共享曲面 S（S−4.0mm），
+结果线稿悬在眼白前 3.8mm，白模是漂浮短线、彩渲是一圈棕色锯齿缝线。
+
+结论：实体眼模式下**不再生成任何眼部线稿**，眼部结构由 eye.py 独占。
+这不是「删细节」，是把重复的贴片层交回给有厚度的实体层。
+眉/鼻/唇线稿保留，仍走颅骨 BVH（那几处没有共享曲面）。
+同时把眼宽/眼高/眉跨度/嘴半宽从写死的旧头常量改成读 `_base` 的当前值 ——
+phase 2 眼宽放大 12.8%、嘴宽放大后，线稿还按旧绝对量画，本身就会错位。
+
+`ENABLE_VOLUME=False` 回退到旧贴片眼时，眼部线稿按原路径恢复（`_DEPTH["eye"]`）。
+`eye.surface_for()` 保留给下一轮「在实体眼上做一根根睫毛」用。
 """
 import math
 
 from mathutils import Vector
 
 import head as headmod
+from head_parts import _base as B
+from head_parts import eye as eyemod
 from meshkit import mesh_from, solidify
 
 
 _DEPTH = {
-    "eye": 0.0048,      # 必须比 eye() 里最前的高光（0.0038）更靠前
+    "eye": 0.0048,      # 仅回退模式（贴片眼）用；相对颅骨 BVH
     "skin": 0.0026,
     "lip": 0.0032,
 }
@@ -84,6 +102,8 @@ def _add(out, bvh, key, points, w, mat, name, mirror=False):
     后来视觉闸门的脸窗从 [45%,85%] 上移到 [30%,70%]，睫毛与虹膜重新进入
     统计窗，不再需要靠粗线凑边缘。1.15 倍是 0.6~0.9mm，仍是细线。
     """
+    if key == "eye" and eyemod.ENABLE_VOLUME:
+        return          # 实体眼已独占眼部结构，不再叠贴片线稿
     w = w * 1.55
     variants = (("p", points), ("n", [(-x, z) for x, z in points])) \
         if mirror else (("p", points),)
@@ -106,8 +126,13 @@ def build(mats, bvh):
     """返回一组独立封闭线稿对象，由 head.build() 合并进 Head。"""
     out = []
     sz = headmod.sz
-    ex, ez = 0.0405, sz(1.500)
-    W, HU, HD, TILT = 0.0186, 0.0150, 0.0090, 0.24
+    # 与 eye.make_eye_volume / brow.make_brow 用同一套当前眼参数。
+    k = B.eye_size()
+    ex, ez = B.eye_x(), B.sz(1.500)
+    W, HU, HD = B.EYE_W * k, B.EYE_HU * k, B.EYE_HD * k
+    TILT = 0.24
+    mw = B.MOUTH_HALF_W * B.charparams.get(
+        "appearance.mouth_width_scale", B._DEFAULT_MOUTH_WIDTH_SCALE)
     dark = mats["lash"]
     soft = mats["lash_soft"]
     brow = mats["brow"]
@@ -132,27 +157,27 @@ def build(mats, bvh):
         t = math.pi * (0.06 + 0.88 * j / 13.0)
         c, sn = math.cos(t), math.sin(t)
         x, z = lid(t)
-        L = 0.0018 + 0.0032 * sn * (0.6 + 0.4 * abs(c))
+        L = W * (0.0968 + 0.1720 * sn * (0.6 + 0.4 * abs(c)))
         dx = 0.25 * L * (1.0 if c >= 0 else -1.0) + 0.10 * L * math.sin(j * 2.1)
         _add(out, bvh, "eye", [(x, z), (x + dx, z + L)],
-             0.00085, dark, "ulash%02d" % j, mirror=True)
+             0.00085 * k, dark, "ulash%02d" % j, mirror=True)
     # 下睫毛 9 根
     for j in range(9):
         t = math.pi * (0.12 + 0.76 * j / 8.0)
         x, z = lid(t, up=False)
-        L = 0.0012 + 0.0018 * math.sin(t)
+        L = W * (0.0645 + 0.0968 * math.sin(t))
         _add(out, bvh, "eye", [(x, z), (x - 0.08 * L, z - L)],
-             0.00060, soft, "dlash%02d" % j, mirror=True)
+             0.00060 * k, soft, "dlash%02d" % j, mirror=True)
 
     # ---- 双眼皮褶 / 卧蚕：各一条连续弧 ----
     _add(out, bvh, "eye",
-         [lid(math.pi * (0.07 + 0.86 * i / 15.0), lift=0.0030, scale=1.06)
+         [lid(math.pi * (0.07 + 0.86 * i / 15.0), lift=0.1613 * W, scale=1.06)
           for i in range(16)],
-         0.00065, soft, "lidfold", mirror=True)
+         0.00065 * k, soft, "lidfold", mirror=True)
     _add(out, bvh, "eye",
          [lid(math.pi * (0.16 + 0.68 * i / 12.0), up=False,
-              lift=0.0032, scale=0.88) for i in range(13)],
-         0.00055, soft, "puff", mirror=True)
+              lift=0.1720 * W, scale=0.88) for i in range(13)],
+         0.00055 * k, soft, "puff", mirror=True)
 
     # ---- 虹膜：上缘深弧 + 下缘浅弧 ----
     # 2026-11-04：原版是 9 条放射纹 + 上半圈整环 rim，正面渲成「齿轮 / 钟表」，
@@ -161,25 +186,26 @@ def build(mats, bvh):
     # 属于刷指标，和脸颊排线同一类错误。
     # 改成：上缘一道深弧（眼睑投影）+ 下缘一道浅弧（虹膜底边），中间留出渐变；
     # 高光由 eye() 里的实体圆提供，不在这里画。
-    icz = ez + 0.0022
+    icz = ez + W * B.EYE_IRIS_DZ
     _add(out, bvh, "eye",
-         _arc(ex, icz, 0.0122, 0.0122, 0.10, math.pi - 0.10, 15),
-         0.00078, iris_dark, "iris_top", mirror=True)
+         _arc(ex, icz, 0.6559 * W, 0.6559 * W, 0.10, math.pi - 0.10, 15),
+         0.00078 * k, iris_dark, "iris_top", mirror=True)
     _add(out, bvh, "eye",
-         _arc(ex, icz, 0.0116, 0.0116, math.pi * 1.12, math.pi * 1.90, 9),
-         0.00055, soft, "iris_bottom", mirror=True)
+         _arc(ex, icz, 0.6237 * W, 0.6237 * W, math.pi * 1.12, math.pi * 1.90, 9),
+         0.00055 * k, soft, "iris_bottom", mirror=True)
 
     # ---- 眉丝 5 条连续线 ----
     # 试过加密到 9 条：face_edge_density 0.0767 → 0.0764（没有提升），
     # 因为 0.6mm 间距在 620px 的图上会糊成一道粗眉，Canny 检不出更多边。
     # 加线不提密度就是凑数，改回 5 条。
     z0 = sz(1.5300)
+    bw = B.EYE_W                      # 与 brow.make_brow 同一跨度口径
     for j in range(5):
         dz = -0.0016 + 0.0008 * j
         pts = []
         for i in range(13):
             t = 0.04 + 0.92 * i / 12.0
-            pts.append((ex - 0.024 + 0.050 * t,
+            pts.append((ex - 1.290323 * bw + 2.688172 * bw * t,
                         z0 + 0.0055 * math.sin(math.pi * t)
                         - 0.0070 * t + dz))
         _add(out, bvh, "skin", pts, 0.00050, brow,
@@ -204,18 +230,18 @@ def build(mats, bvh):
     up = []
     for i in range(13):
         t = i / 12.0
-        up.append((0.0120 * (2.0 * t - 1.0),
+        up.append((mw * (2.0 * t - 1.0),
                    mz - 0.0013 * math.sin(math.pi * t)
                    + 0.0009 * math.cos(2.0 * math.pi * t)))
     _add(out, bvh, "lip", up, 0.00070, lip, "uplip")
     dn = []
     for i in range(11):
         t = i / 10.0
-        dn.append((0.0100 * (2.0 * t - 1.0),
+        dn.append((0.8333 * mw * (2.0 * t - 1.0),
                    mz - 0.0032 - 0.0008 * math.sin(math.pi * t)))
     _add(out, bvh, "lip", dn, 0.00060, lip, "dnlip")
     _add(out, bvh, "lip",
-         [(-0.0068, mz - 0.0060), (0.0068, mz - 0.0060)],
+         [(-0.5667 * mw, mz - 0.0060), (0.5667 * mw, mz - 0.0060)],
          0.00045, soft, "lipshadow")
 
     # ---- 脸颊：只留真正的五官结构 ----
@@ -227,8 +253,8 @@ def build(mats, bvh):
     # 与脸颊排线同一类错误，不能因为闸门绿了就留着。
     for j in range(2):
         _add(out, bvh, "lip",
-             [(0.0018 + 0.0026 * j, mz + 0.0010),
-              (0.0034 + 0.0026 * j, mz - 0.0006)],
+             [((0.1500 + 0.2167 * j) * mw, mz + 0.0010),
+              ((0.2833 + 0.2167 * j) * mw, mz - 0.0006)],
              0.00050, lip, "liptubercle%d" % j, mirror=True)
 
     return out

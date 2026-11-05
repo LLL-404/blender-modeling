@@ -119,6 +119,96 @@ def _measure_lid(M, bvh):
             "max_mm": round(1000.0 * max(diffs), 4)}
 
 
+def _measure_todo(M, skull, cos, sclera, head_w_full, eye_w, ear_l):
+    """合同里 4 条 TODO 量尺 + 3 条对称量尺，全部**几何实测**，不读常量。
+
+    socket_depth 用「双构建」：正常 sculpt 一次，屏蔽 eye.socket_deltas 再
+    sculpt 一次，逐顶点 y 差的最大值就是眼窝真实凹陷；读常量只能证明代码
+    写了 5.2mm，证明不了网格真有这个凹陷。
+    """
+    import head_parts.eye as E
+
+    out = {}
+    sz = headmod.sz
+
+    # ---- 1. socket_depth ----
+    orig = E.socket_deltas
+    try:
+        E.socket_deltas = lambda x, y, z, ex: []
+        plain = headmod.head_base()
+        headmod.sculpt(plain)
+        pv = [v.co for v in plain.data.vertices]
+        sv = [v.co for v in skull.data.vertices]
+        if len(pv) == len(sv):
+            out["socket_depth_mm"] = round(
+                1000.0 * max(abs(a.y - b.y) for a, b in zip(pv, sv)), 3)
+        bpy.data.objects.remove(plain, do_unlink=True)
+    finally:
+        E.socket_deltas = orig
+
+    # ---- 2. eye_tilt：右眼内外眼角 z 差 / 单眼全宽 ----
+    rp = [c for c in sclera if c.x > 0]
+    if rp and eye_w:
+        xmax, xmin = max(c.x for c in rp), min(c.x for c in rp)
+        outer = [c.z for c in rp if c.x >= xmax - 0.0035]
+        inner = [c.z for c in rp if c.x <= xmin + 0.0035]
+        if outer and inner:
+            dz = sum(outer) / len(outer) - sum(inner) / len(inner)
+            out["eye_tilt_mm"] = round(1000.0 * dz, 3)
+            out["eye_tilt_r"] = round(dz / eye_w, 6)
+
+    # ---- 3. nose_width：鼻部位移影响区的 x 跨度 / 含耳头宽 ----
+    # 第一版取「鼻前缘 y 最小的 2.5mm 带内的 x 跨度」，实测得 0 —— 鼻尖是
+    # 单点，窗里只有一个顶点。改成与 socket_depth 同样的双构建：屏蔽
+    # nose.sculpt_deltas，取 |Δy| > 1mm 的顶点，其 x 跨度就是鼻子的横向影响范围。
+    import head_parts.nose as N
+    orig_n = N.sculpt_deltas
+    try:
+        N.sculpt_deltas = lambda *a: []
+        plain_n = headmod.head_base()
+        headmod.sculpt(plain_n)
+        pv = [v.co for v in plain_n.data.vertices]
+        sv = [v.co for v in skull.data.vertices]
+        if len(pv) == len(sv):
+            affected = [sv[i].x for i, (a, b) in enumerate(zip(pv, sv))
+                        if abs(a.y - b.y) > 0.001]
+            if affected:
+                span = max(affected) - min(affected)
+                out["nose_affected_span_mm"] = round(1000.0 * span, 3)
+                out["nose_width_r"] = round(span / head_w_full, 6)
+        bpy.data.objects.remove(plain_n, do_unlink=True)
+    finally:
+        N.sculpt_deltas = orig_n
+
+    # ---- 4. lip_protrusion：唇最前点比下巴最前点前多少 mm ----
+    lip_band = [c.y for c in cos if sz(1.424) <= c.z <= sz(1.436)
+                and abs(c.x) <= 0.010 and c.y < 0]
+    chin_band = [c.y for c in cos if c.z < sz(1.410) and abs(c.x) <= 0.020 and c.y < 0]
+    if lip_band and chin_band:
+        ly, cy = min(lip_band), min(chin_band)
+        out["lip_front_y_mm"] = round(1000.0 * ly, 3)
+        out["lip_protrusion_mm"] = round(1000.0 * (cy - ly), 3)
+
+    # ---- 5. 三条对称量尺 ----
+    out["skull_symmetry_mm"] = round(
+        1000.0 * abs(max(c.x for c in cos) + min(c.x for c in cos)), 3)
+    lp = [c for c in sclera if c.x < 0]
+    if lp and rp:
+        lz = (max(c.z for c in lp) + min(c.z for c in lp)) / 2.0
+        rz = (max(c.z for c in rp) + min(c.z for c in rp)) / 2.0
+        out["eye_symmetry_z_mm"] = round(1000.0 * abs(lz - rz), 3)
+    ear_r = headmod.ear(1, M)
+    lxs = [v.co.x for v in ear_l.data.vertices]
+    lzs = [v.co.z for v in ear_l.data.vertices]
+    rxs = [v.co.x for v in ear_r.data.vertices]
+    rzs = [v.co.z for v in ear_r.data.vertices]
+    out["ear_symmetry_mm"] = round(1000.0 * max(
+        abs(max(lxs) + min(rxs)), abs(min(lxs) + max(rxs)),
+        abs(max(lzs) - max(rzs)), abs(min(lzs) - min(rzs))), 3)
+    bpy.data.objects.remove(ear_r, do_unlink=True)
+    return out
+
+
 def measure():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     M = matsmod.set_all()
@@ -184,6 +274,7 @@ def measure():
     exs = [v.co.x for v in ear.data.vertices]
 
     lid = _measure_lid(M, headmod.make_bvh(skull))
+    extra = _measure_todo(M, skull, cos, sclera, head_w_full, eye_w, ear)
 
     doc = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -220,8 +311,9 @@ def measure():
             "lid_thickness_max_mm": lid["max_mm"],
         },
         "_caliber": "head_width/depth/w_over_len 用含耳的 Head bbox（与 spec/reference.json 同口径）；skull_* 是头骨本体。cheek_front_y 只取 |x|∈[60,95]mm 的颧骨带，避免被鼻尖主导。",
-        "_note": "phase 0 基线。拆 head.py 之后要求 hash 完全一致；归一化阶段允许变，但要逐条报哪些 gauge 动了。",
+        "_note": "phase 0 基线。拆 head.py 之后要求 hash 完全一致；归一化阶段允许变，但要逐条报哪些 gauge 动了。TODO 量尺由 _measure_todo() 几何实测，不读常量。",
     }
+    doc["gauges"].update(extra)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     if os.path.isfile(OUT):
         os.replace(OUT, PREV)
