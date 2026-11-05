@@ -82,6 +82,15 @@ def _load(path):
 
 def _mtime(rel):
     p = os.path.join(ROOT, rel)
+    if os.path.isdir(p):
+        best = 0.0
+        for base, _dirs, names in os.walk(p):
+            for n in names:
+                try:
+                    best = max(best, os.path.getmtime(os.path.join(base, n)))
+                except OSError:
+                    pass
+        return best
     try:
         return os.path.getmtime(p)
     except OSError:

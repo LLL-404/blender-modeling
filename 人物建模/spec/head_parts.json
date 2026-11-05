@@ -1,0 +1,801 @@
+{
+  "_note": "头部 L2 部件合同。每个部件一条：类型、z 区间、构建函数、参数（≤12，默认值全部来自现有代码，不拍脑袋）、量尺（gauge）、证据、依赖。脚本还没读它——先作为拆分与改代码的唯一依据，批准后接入 flow。",
+  "_schema": 1,
+  "_measured_at": "2026-11-05T15:35+08:00",
+  "_current": {
+    "head_len_m": 0.25828,
+    "head_width_m": 0.22461,
+    "head_depth_m": 0.196365,
+    "chin_z": 1.422,
+    "top_z": 1.6803,
+    "head_w_over_len": 0.869639,
+    "head_len_over_depth": 1.315306,
+    "skull_width_m": 0.214671,
+    "head_unit_m": 0.213914
+  },
+  "_finding": "头按 6.5 头身放大到 0.2583m（原 0.2161），但 EYE_X/EYE_W/嘴宽/耳高仍是按旧头写的绝对常量：眼睛相对头宽从 0.195 掉到 0.166，嘴宽占比从 12.6% 掉到 10.69%，耳高相对头长从 0.212 掉到 0.177。换头身比只放大了头骨，没放大五官 —— 脸会越换越像大饼。所以尺寸参数一律改成「占头宽的比例」，z 改成「下巴→头顶的比例」，只有前后向凸起保留 mm。",
+  "_rules": [
+    "每个部件 ≤12 个参数；超过就说明拆得不够细。",
+    "每个参数必须有单位、默认值、允许范围；±10% 时必须能推动至少一条 gauge，否则算假参数。",
+    "尺寸用 ratio_head_unit（名义头骨宽 = 2×max(rx of head_rows())，不含耳）；位置用 z_r；只有 y 向深度用 mm。例外：眼中心 x 与耳高按 BOSS 决策保留绝对 mm。",
+    "默认值只能来自现有代码或实测，不许写「大概是」。没有实测的参数列在 todo_params 里。",
+    "region 类部件（壳上区域）不产生独立物体；volume 类（眼球/眼睑/耳）独立建再 join 进 Head。",
+    "几何复核只看白模；彩渲只判观感。"
+  ],
+  "parts": [
+    {
+      "id": "skull",
+      "label": "颅骨壳",
+      "kind": "region",
+      "parent": null,
+      "z_range_m": [
+        1.422,
+        1.6803
+      ],
+      "build_fn": "lib/head.py:head_base (279)",
+      "current_impl": "17 行 HEAD_RAW（81-103）→ Catmull-Rom 重采样 → 控制笼 13×24 → Catmull-Clark 2 级（CAGE_*，170-174）",
+      "params": [
+        {
+          "name": "head_len_m",
+          "unit": "m",
+          "default": 0.2583,
+          "range": [
+            0.252,
+            0.264
+          ],
+          "gauge": "head_len"
+        },
+        {
+          "name": "w_over_len",
+          "unit": "ratio",
+          "default": 0.8695,
+          "range": [
+            0.82,
+            0.93
+          ],
+          "gauge": "head_w_over_len"
+        },
+        {
+          "name": "d_over_len",
+          "unit": "ratio",
+          "default": 0.7602,
+          "range": [
+            0.72,
+            0.8
+          ],
+          "gauge": "head_len_over_depth"
+        }
+      ],
+      "gauges": [
+        {
+          "id": "head_len",
+          "rule": "0.2585 ± 0.006 m",
+          "current": 0.2583,
+          "status": "PASS"
+        },
+        {
+          "id": "head_w_over_len",
+          "rule": "0.872 ± 0.05",
+          "current": 0.8695,
+          "status": "PASS"
+        },
+        {
+          "id": "head_len_over_depth",
+          "rule": "1.322 ± 0.08",
+          "current": 1.3152,
+          "status": "PASS"
+        },
+        {
+          "id": "symmetry_x",
+          "rule": "左右 bbox 差 ≤ 0.2 mm",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "nonmanifold",
+          "rule": "非流形边 = 0",
+          "current": null,
+          "status": "TODO"
+        }
+      ],
+      "evidence": [
+        "clay_front",
+        "clay_side",
+        "clay_34"
+      ],
+      "deps": [
+        "hair._cap 读 HEAD 快照",
+        "rig head 骨",
+        "look.flatten_face 的 z0/z1"
+      ]
+    },
+    {
+      "id": "jaw",
+      "label": "下颌与下巴",
+      "kind": "region",
+      "parent": "skull",
+      "z_range_m": [
+        1.422,
+        1.5
+      ],
+      "build_fn": "lib/head.py:cage_sculpt (214) + sculpt (342-346)",
+      "current_impl": "控制笼 z=sz(1.440) 侧后方内收 3.2mm；顶点级 z=sz(1.399) 前推 6.0mm、下压 1.5mm",
+      "params": [
+        {
+          "name": "jaw_z_r",
+          "unit": "ratio_head",
+          "default": 0.239,
+          "range": [
+            0.18,
+            0.3
+          ],
+          "gauge": "jaw_width"
+        },
+        {
+          "name": "jaw_inset_mm",
+          "unit": "mm",
+          "default": 3.2,
+          "range": [
+            0.0,
+            5.0
+          ],
+          "gauge": "jaw_width"
+        },
+        {
+          "name": "chin_fwd_mm",
+          "unit": "mm",
+          "default": 6.0,
+          "range": [
+            3.0,
+            9.0
+          ],
+          "gauge": "chin_protrusion"
+        },
+        {
+          "name": "chin_down_mm",
+          "unit": "mm",
+          "default": 1.5,
+          "range": [
+            0.0,
+            3.0
+          ],
+          "gauge": "chin_z"
+        }
+      ],
+      "todo_params": [
+        "chin_width（现在是 ±38° 角带，不是毫米宽度；要先定口径）"
+      ],
+      "gauges": [
+        {
+          "id": "jaw_width",
+          "rule": "下颌角处 x 跨度 / 头宽 ∈ [0.62, 0.72]",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "chin_protrusion",
+          "rule": "下巴最前点比唇线前 ≥ 1.0 mm",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "symmetry_x",
+          "rule": "左右差 ≤ 0.2 mm",
+          "current": null,
+          "status": "TODO"
+        }
+      ],
+      "evidence": [
+        "clay_front",
+        "clay_side",
+        "clay_34"
+      ],
+      "deps": [
+        "下颌线贴片（face_detail）",
+        "耳垂位置"
+      ]
+    },
+    {
+      "id": "cheek",
+      "label": "颧骨",
+      "kind": "region",
+      "parent": "skull",
+      "z_range_m": [
+        1.48,
+        1.56
+      ],
+      "build_fn": "lib/head.py:cage_sculpt (264) + sculpt (348-352)",
+      "current_impl": "控制笼外扩 2.2mm；顶点级外扩 1.6mm + 前推 3.0mm",
+      "params": [
+        {
+          "name": "cheek_z_r",
+          "unit": "ratio_head",
+          "default": 0.376,
+          "range": [
+            0.3,
+            0.45
+          ],
+          "gauge": "cheek_width"
+        },
+        {
+          "name": "cheek_out_mm",
+          "unit": "mm",
+          "default": 2.2,
+          "range": [
+            0.0,
+            4.0
+          ],
+          "gauge": "cheek_width"
+        },
+        {
+          "name": "cheek_fwd_mm",
+          "unit": "mm",
+          "default": 3.0,
+          "range": [
+            0.0,
+            5.0
+          ],
+          "gauge": "cheek_protrusion"
+        }
+      ],
+      "todo_params": [
+        "cheek_width（现在是高斯 sigma 0.068/sx + 0.016/sx，不是总宽）"
+      ],
+      "gauges": [
+        {
+          "id": "cheek_width",
+          "rule": "颧骨处 x 跨度 / 头宽 ∈ [0.94, 1.00]",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "cheek_protrusion",
+          "rule": "颧骨点比同 z 中线凹进 ≤ 6 mm",
+          "current": null,
+          "status": "TODO"
+        }
+      ],
+      "evidence": [
+        "clay_front",
+        "clay_34",
+        "clay_side"
+      ],
+      "deps": [
+        "眼下阴影",
+        "下颌线"
+      ]
+    },
+    {
+      "id": "brow",
+      "label": "眉弓",
+      "kind": "region",
+      "parent": "skull",
+      "z_range_m": [
+        1.54,
+        1.61
+      ],
+      "build_fn": "lib/head.py:cage_sculpt (270) + sculpt (318-320)",
+      "current_impl": "控制笼前推 1.6mm；顶点级前推 3.4mm（高斯 x/0.048、z/0.011）",
+      "params": [
+        {
+          "name": "brow_z_r",
+          "unit": "ratio_head",
+          "default": 0.598,
+          "range": [
+            0.55,
+            0.65
+          ],
+          "gauge": "brow_protrusion"
+        },
+        {
+          "name": "brow_fwd_mm",
+          "unit": "mm",
+          "default": 5.0,
+          "range": [
+            2.0,
+            7.0
+          ],
+          "gauge": "brow_protrusion"
+        }
+      ],
+      "todo_params": [
+        "brow_width（高斯 sigma 0.048，不是总宽）"
+      ],
+      "gauges": [
+        {
+          "id": "brow_protrusion",
+          "rule": "眉弓比眼窝上沿前 ≥ 1.5 mm",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "brow_width",
+          "rule": "眉弓 x 跨度 / 头宽 ∈ [0.36, 0.50]",
+          "current": null,
+          "status": "TODO"
+        }
+      ],
+      "evidence": [
+        "clay_front",
+        "clay_side"
+      ],
+      "deps": [
+        "眼窝凹陷",
+        "眉毛贴片"
+      ]
+    },
+    {
+      "id": "nose",
+      "label": "鼻",
+      "kind": "region",
+      "parent": "skull",
+      "z_range_m": [
+        1.49,
+        1.54
+      ],
+      "build_fn": "lib/head.py:sculpt (322-332)",
+      "current_impl": "4 个高斯沿 -Y 推/收：鼻梁 6.0mm、鼻尖 12.5mm、鼻翼 3.8mm、鼻底回 3.0mm",
+      "params": [
+        {
+          "name": "nose_z_r",
+          "unit": "ratio_head",
+          "default": 0.307,
+          "range": [
+            0.26,
+            0.35
+          ],
+          "gauge": "nose_protrusion_mm"
+        },
+        {
+          "name": "bridge_h_mm",
+          "unit": "mm",
+          "default": 6.0,
+          "range": [
+            3.0,
+            8.0
+          ],
+          "gauge": "nose_bridge"
+        },
+        {
+          "name": "tip_fwd_mm",
+          "unit": "mm",
+          "default": 12.5,
+          "range": [
+            9.0,
+            14.0
+          ],
+          "gauge": "nose_protrusion_mm"
+        },
+        {
+          "name": "tip_sigma_r",
+          "unit": "ratio_head_w",
+          "default": 0.043,
+          "range": [
+            0.03,
+            0.06
+          ],
+          "gauge": "nose_width"
+        },
+        {
+          "name": "wing_sigma_r",
+          "unit": "ratio_head_w",
+          "default": 0.021,
+          "range": [
+            0.015,
+            0.03
+          ],
+          "gauge": "nose_width"
+        },
+        {
+          "name": "base_indent_mm",
+          "unit": "mm",
+          "default": 3.0,
+          "range": [
+            1.0,
+            4.0
+          ],
+          "gauge": "nose_base_shadow"
+        }
+      ],
+      "gauges": [
+        {
+          "id": "nose_protrusion_mm",
+          "rule": "8.5 ~ 10.0 mm（鼻尖相对额面）",
+          "current": 9.03,
+          "status": "PASS"
+        },
+        {
+          "id": "nose_width",
+          "rule": "鼻翼外缘 x 跨度 / 头宽 ∈ [0.10, 0.16]",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "nose_symmetry",
+          "rule": "左右外形差 ≤ 0.3 mm",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "nose_base_shadow",
+          "rule": "鼻底回缩 ≥ 2 mm",
+          "current": 3.0,
+          "status": "TODO"
+        }
+      ],
+      "evidence": [
+        "clay_front",
+        "clay_side",
+        "clay_34",
+        "clay_closeup_nose"
+      ],
+      "deps": [
+        "眼窝",
+        "上唇",
+        "面中法线（≤25°）"
+      ]
+    },
+    {
+      "id": "lips",
+      "label": "嘴唇",
+      "kind": "region",
+      "parent": "skull",
+      "z_range_m": [
+        1.44,
+        1.49
+      ],
+      "build_fn": "lib/head.py:sculpt (334-340) + mouth (497)",
+      "current_impl": "上下唇各一个高斯前推（4.0 / 5.2mm），唇线回缩 1.6mm；唇线由 0.4mm 贴片画",
+      "params": [
+        {
+          "name": "mouth_z_r",
+          "unit": "ratio_head",
+          "default": 0.199,
+          "range": [
+            0.16,
+            0.24
+          ],
+          "gauge": "mouth_over_face"
+        },
+        {
+          "name": "mouth_w_r",
+          "unit": "ratio_head_unit",
+          "default": 0.126,
+          "range": [
+            0.11,
+            0.14
+          ],
+          "gauge": "mouth_over_face",
+          "note": "全宽 = 0.126 × head_unit；旧设计比例，当前 26.95mm"
+        },
+        {
+          "name": "upper_thick_mm",
+          "unit": "mm",
+          "default": 4.0,
+          "range": [
+            2.5,
+            5.5
+          ],
+          "gauge": "lip_ratio"
+        },
+        {
+          "name": "lower_thick_mm",
+          "unit": "mm",
+          "default": 5.2,
+          "range": [
+            3.0,
+            7.0
+          ],
+          "gauge": "lip_ratio"
+        },
+        {
+          "name": "lip_fwd_mm",
+          "unit": "mm",
+          "default": 5.2,
+          "range": [
+            3.0,
+            7.0
+          ],
+          "gauge": "lip_protrusion"
+        },
+        {
+          "name": "line_indent_mm",
+          "unit": "mm",
+          "default": 1.6,
+          "range": [
+            0.8,
+            2.5
+          ],
+          "gauge": "lip_line_depth"
+        }
+      ],
+      "gauges": [
+        {
+          "id": "mouth_over_face",
+          "rule": "嘴宽 / 脸宽 ∈ [10%, 13%]",
+          "current": 0.12,
+          "status": "PASS",
+          "note": "口径是含耳头宽 0.22461，非 head_unit"
+        },
+        {
+          "id": "lip_ratio",
+          "rule": "下唇厚 / 上唇厚 ∈ [1.15, 1.45]",
+          "current": 1.3,
+          "status": "PASS"
+        },
+        {
+          "id": "lip_protrusion",
+          "rule": "侧视唇体比下巴前 ≥ 2 mm",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "lip_line_depth",
+          "rule": "唇线凹陷 ≥ 1 mm",
+          "current": 1.6,
+          "status": "TODO"
+        }
+      ],
+      "evidence": [
+        "clay_front",
+        "clay_side",
+        "clay_closeup_mouth"
+      ],
+      "deps": [
+        "下巴",
+        "鼻底",
+        "面部线稿"
+      ]
+    },
+    {
+      "id": "eye",
+      "label": "眼（眼球 + 眼睑）",
+      "kind": "volume",
+      "parent": "skull",
+      "z_range_m": [
+        1.53,
+        1.575
+      ],
+      "build_fn": "lib/head.py:eye (412)",
+      "current_impl": "眼白/虹膜/瞳孔/高光/睫毛全是 0.0012~0.0038 偏移的平面 fan 贴在壳上，没有眼球、没有眼睑厚度、没有眼窝内壁",
+      "params": [
+        {
+          "name": "eye_x_mm",
+          "unit": "mm",
+          "default": 40.5,
+          "range": [
+            38.0,
+            43.0
+          ],
+          "gauge": "inner_eye_over_eye_width",
+          "note": "BOSS 决策：眼中心不动，唯一保留绝对的尺寸"
+        },
+        {
+          "name": "eye_w_r",
+          "unit": "ratio_head_unit",
+          "default": 0.19614,
+          "range": [
+            0.18,
+            0.22
+          ],
+          "gauge": "inner_eye_over_eye_width",
+          "note": "原 0.17390，放大 12.8%"
+        },
+        {
+          "name": "eye_h_up_r",
+          "unit": "ratio_head_unit",
+          "default": 0.079089,
+          "range": [
+            0.06,
+            0.1
+          ],
+          "gauge": "eye_aspect"
+        },
+        {
+          "name": "eye_h_down_r",
+          "unit": "ratio_head_unit",
+          "default": 0.047453,
+          "range": [
+            0.03,
+            0.06
+          ],
+          "gauge": "eye_aspect"
+        },
+        {
+          "name": "tilt",
+          "unit": "ratio",
+          "default": 0.24,
+          "range": [
+            0.0,
+            0.4
+          ],
+          "gauge": "eye_tilt"
+        },
+        {
+          "name": "socket_depth_mm",
+          "unit": "mm",
+          "default": 5.2,
+          "range": [
+            3.0,
+            7.0
+          ],
+          "gauge": "socket_depth"
+        }
+      ],
+      "todo_params": [
+        "lid_thick_mm（现在没有眼睑厚度，默认值等新几何定了再写）"
+      ],
+      "gauges": [
+        {
+          "id": "inner_eye_over_eye_width",
+          "rule": "内眼角间距 / 眼宽 ∈ [0.85, 1.00]",
+          "current": 0.93054,
+          "status": "PASS"
+        },
+        {
+          "id": "eye_aspect",
+          "rule": "眼裂高/宽 ∈ [0.55, 0.75]",
+          "current": 0.645,
+          "status": "PASS"
+        },
+        {
+          "id": "eye_tilt",
+          "rule": "外眼角比内眼角高 10%~20% 眼宽",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "socket_depth",
+          "rule": "眼窝凹陷 ≥ 3 mm",
+          "current": 5.2,
+          "status": "TODO"
+        },
+        {
+          "id": "lid_thickness",
+          "rule": "上眼睑厚度 ≥ 0.8 mm（侧视可见）",
+          "current": null,
+          "status": "TODO"
+        },
+        {
+          "id": "eye_symmetry",
+          "rule": "左右眼中心 z 差 ≤ 0.2 mm",
+          "current": null,
+          "status": "TODO"
+        }
+      ],
+      "evidence": [
+        "clay_front",
+        "clay_side",
+        "clay_closeup_eye"
+      ],
+      "deps": [
+        "眉弓",
+        "颧骨",
+        "睫毛线稿",
+        "flatten_face 不得把眼球压平"
+      ]
+    },
+    {
+      "id": "ear",
+      "label": "耳",
+      "kind": "volume",
+      "parent": "skull",
+      "z_range_m": [
+        1.515,
+        1.57
+      ],
+      "build_fn": "lib/head.py:ear (516)",
+      "current_impl": "椭球压扁，rim/concha 两个高斯沿 y 推拉；耳高 45.82mm、耳贡献头宽 5.75mm/侧",
+      "params": [
+        {
+          "name": "ear_z_r",
+          "unit": "ratio_head",
+          "default": 0.461,
+          "range": [
+            0.42,
+            0.5
+          ],
+          "gauge": "ear_height_mm"
+        },
+        {
+          "name": "ear_h_mm",
+          "unit": "mm",
+          "default": 45.82,
+          "range": [
+            45.0,
+            50.0
+          ],
+          "gauge": "ear_height_mm",
+          "note": "BOSS 决策 A：保持绝对，不随头身比放大"
+        },
+        {
+          "name": "ear_out_mm",
+          "unit": "mm",
+          "default": 5.75,
+          "range": [
+            3.0,
+            8.0
+          ],
+          "gauge": "ear_out"
+        },
+        {
+          "name": "rim_mm",
+          "unit": "mm",
+          "default": 2.8,
+          "range": [
+            1.5,
+            4.0
+          ],
+          "gauge": "ear_rim_minus_concha"
+        },
+        {
+          "name": "concha_mm",
+          "unit": "mm",
+          "default": 4.2,
+          "range": [
+            2.0,
+            6.0
+          ],
+          "gauge": "ear_rim_minus_concha"
+        }
+      ],
+      "todo_params": [
+        "ear_w_r（椭球 x 半轴 0.0190 未归一化）"
+      ],
+      "gauges": [
+        {
+          "id": "ear_height_mm",
+          "rule": "45 ~ 50 mm（BOSS 2026-11-05 定：保持绝对，不随头放大）",
+          "current": 45.819,
+          "status": "PASS"
+        },
+        {
+          "id": "ear_rim_minus_concha",
+          "rule": "耳轮外凸 − 耳甲内凹 ≥ 1 mm",
+          "current": 2.76,
+          "status": "PASS"
+        },
+        {
+          "id": "ear_out",
+          "rule": "耳外缘贡献头宽 ≥ 3 mm/侧",
+          "current": 5.75,
+          "status": "PASS"
+        },
+        {
+          "id": "ear_symmetry",
+          "rule": "左右耳 z/x 差 ≤ 0.2 mm",
+          "current": null,
+          "status": "TODO"
+        }
+      ],
+      "evidence": [
+        "clay_front",
+        "clay_side",
+        "clay_back"
+      ],
+      "deps": [
+        "头宽（ear 撑起 5.75mm/侧，动耳必须复测 head_w_over_len）"
+      ]
+    }
+  ],
+  "non_geometry": [
+    {
+      "id": "face_lines",
+      "label": "面部线稿层",
+      "build_fn": "lib/face_detail.py",
+      "why": "睫毛分根、虹膜纹、眉丝、唇线、鼻影、腮红属于贴图/线稿级细节，不做成几何体积；单独成 FaceLines 对象，不参与描边、不进 glb",
+      "rule": "线宽 ≤ 0.7 mm；每根线必须有起止点；不许用平行排线凑密度"
+    }
+  ],
+  "_decisions_20261105": {
+    "ear_height": "A 保持绝对 45~50mm（小耳），不随头身比放大",
+    "eye_width": "A 眼宽放大 12.8%（0.17390→0.19614 头骨宽比），眼中心不动",
+    "eyelid": "A 只做静态实体，不绑眼睑骨/形态键"
+  },
+  "_phase_log": [
+    "phase 0 基线：Head hash 34e7af034bb792f6 / skull 4c0a309ab3ecf791（两次一致）",
+    "phase 1 拆分 8 模块后：hash 逐位不变，A2 5 条判定不变，probe_cage 通过",
+    "phase 2 归一化后：Head a41051ab7e803221 / skull d11a4f8fccec092c；只还原嘴半宽即回到 phase0 的 4c0a309ab3ecf791，证明颅骨变化只来自嘴唇",
+    "phase 2 量尺：内眼角/眼宽 1.1774→0.9305（PASS）、嘴宽/脸宽 10.69%→12.00%（PASS）、耳高 45.819mm 不变、头长/宽/深不变"
+  ]
+}
