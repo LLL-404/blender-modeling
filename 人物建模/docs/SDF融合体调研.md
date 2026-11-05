@@ -14,6 +14,7 @@
 | 3 | 值得做**局部试点**（耳根/手指接缝），**不值得现在替换整条主链** |
 | 4 | SDF 修的是「接缝与穿插」，**修不了「丑」**（五官比例、发丝、贴图、配色一条都不碰） |
 | 5 | 本机 `SDFGridBoolean` 只有硬 UNION，**没有 smooth-union 选项**；圆滑过渡要走 Fillet 或「膨胀→并集→收缩」 |
+| 6 | **v2 补充（17:10 补算后）**：本文件里 `0.5mm` 体素、`Iterations 2~4`、内存估算三处是拍的，已被解析推导推翻并改正；详见 [SDF数学推导与误差界.md](SDF数学推导与误差界.md) |
 
 ---
 
@@ -58,7 +59,7 @@
 | 路 | 做法 | 代价 |
 |---|---|---|
 | **A 原生 Fillet（推荐先试）** | 两个 grid → UNION → `SDFGridFillet`(Iterations 2~4) → `GridToMesh` | 零依赖、全原生；是「交线倒圆角」，不是严格 smin |
-| B 膨胀-并集-收缩 | 两 grid 各 `Offset(−k)` → UNION → `Offset(+k)` | 近似 smin，全原生；体积会轻微变化，`k` 要标定 |
+| B 膨胀-并集-收缩 | 两 grid 各 `Offset(−k)` → UNION → `Offset(+k)` | **只是一阶近似，不是等价替代**：`smin` 破坏 Eikonal 条件（颈部 `\|∇d\|=0.436`），实际几何位移放大 2.294×；`k=4mm` 时误差 9.3%。见数学文档 §1.2 |
 | C 自己算 smin | Python/numpy 采两 grid 值算 `smin` 再写回 | 严格 smin；Blender 的 grid Python API 暴露有限，可能要转 OpenVDB 或用外部库 |
 
 ---
@@ -97,11 +98,17 @@
 
 ## 5. 体素成本估算（决定「局部还是整头」）
 
-| 范围 | bbox | 0.5mm 体素 | float32 density 内存 |
+| 范围 | bbox | 体素 | 满网格 float32 |
 |---|---|---|---|
-| 整头 | 0.22 × 0.20 × 0.26 m | 440 × 400 × 520 ≈ **9150 万** | ≈ 366 MB |
-| 耳根局部 ROI | 0.06 × 0.04 × 0.06 m | 120 × 80 × 120 ≈ **115 万** | ≈ 4.6 MB |
-| 手指+掌局部 | 0.06 × 0.05 × 0.12 m | 120 × 100 × 240 ≈ **288 万** | ≈ 11.5 MB |
+| 整头 | 0.22 × 0.20 × 0.26 m | 0.5mm → 440×400×520 ≈ 9150 万 | ≈ 366 MB |
+| 耳根 ROI | 0.06 × 0.04 × 0.06 m | 0.5mm → 120×80×120 ≈ 115 万 | ≈ 4.6 MB |
+| 耳根 ROI | 同上 | **0.162mm → 371×247×371 ≈ 3400 万** | **≈ 130 MB**（窄带估算 4.38 MB） |
+| 手指+掌 ROI | 0.06 × 0.05 × 0.12 m | 0.5mm → 120×100×240 ≈ 288 万 | ≈ 11.5 MB |
+
+**0.5mm 不够**：marching cubes 采样误差 `e ≤ √3·h/2 = 0.433mm`，是耳轮 2.8mm 的
+15.5%。按 5% 容差反解 **`h ≤ 0.162mm`**（推导见 [SDF数学推导与误差界.md](SDF数学推导与误差界.md) §3）。
+`MeshToSDFGrid` 的 `Band Width` 暗示稀疏窄带存储，内存可能按 4.38MB 而不是 130MB ——
+**这是推断，峰值内存必须在试点里实测**。
 
 整头不仅贵，还会把控制笼、UV、权重、描边一次性全毁掉 → **不做**。
 局部 ROI 是唯一合理形态。
@@ -125,8 +132,8 @@ MUST 按顺序：
 | 步 | 动作 |
 |---|---|
 | 1 | 只取 `head_base()+sculpt()` 与 `ear(-1, M)`，裁到耳周 ROI；**不加载眼睛/头发/服装** |
-| 2 | 各跑 `MeshToSDFGrid`（Voxel Size `0.0005`、Band Width 3） |
-| 3 | 路 A：UNION → `SDFGridFillet`(Iterations 2~4) → `GridToMesh`(Threshold 0, Adaptivity 0) |
+| 2 | 各跑 `MeshToSDFGrid`（**Voxel Size `0.000162`**、Band Width 3）—— 0.5mm 已被误差界否决 |
+| 3 | 路 A：UNION → `SDFGridFillet` → `GridToMesh`(Threshold 0, Adaptivity 0)。**Iterations 先标定**：扫描 n、量颈部曲率半径、拟合 `L ≈ h√n`（对 `SDFGridLaplacian/Mean` 成立，Fillet 实现未公开）；`k=2mm @ h=0.162mm` 的理论量级是 **153 轮**，不是 2~4 轮 |
 | 4 | 出 `out/sdf_probe.json` + 白模对比图 |
 
 判据（不过就停，不在主链上试第三个变体）：
@@ -137,7 +144,8 @@ MUST 按顺序：
 | 尺寸 | `ear_height_mm` 45.819 ±0.5；`head_width` 变化 <0.5mm |
 | 法线 | 耳根接缝处相邻面法线突变 <15° |
 | 人眼 | 白模侧视看不到耳根的硬接缝 |
-| 成本 | 耗时 / 峰值内存写进报告 |
+| 体素误差 | `√3·h/2 ≤ 0.14mm`（5% 耳轮容差） |
+| 成本 | 耗时 / **实测峰值内存**（验证窄带假设）写进报告 |
 
 NEVER：
 
@@ -180,7 +188,11 @@ SDF 多给的两样东西：`k` 可控的过渡、只在局部 ROI 做、不必�
 ```bash
 "D:/Program Files/Blender Foundation/Blender 5.2/blender.exe" \
     -b --factory-startup --python-exit-code 1 --python scripts/probe_sdf_nodes.py
+python scripts/sdf_math.py          # 解析推导 + 数值实验 -> out/sdf_math.json / .png
 ```
 
 输出里 `GeometryNodeSDFGridBoolean` 的 `operation` 只有
 `INTERSECT / UNION / DIFFERENCE` —— 这就是「没有原生 smooth-union」的实测依据。
+
+数学部分（闭式、梯度/Hessian、曲率、误差界、扩散标度、三处结论修正）见
+[docs/SDF数学推导与误差界.md](SDF数学推导与误差界.md)。

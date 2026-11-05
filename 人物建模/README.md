@@ -428,7 +428,8 @@ blender -b --factory-startup --python opt/eval_geom.py -- --use-best
 8. **没有 SDF smooth-union 融合**：唯一的「融合」是 `meshkit.voxel_remesh()` 的硬体素重网格
    （身体 5mm、手 2mm），全仓 0 处 metaball / `smin` / 隐式曲面。本机 Blender 5.2.2
    原生 SDF 几何节点实测可用但未接入；局部试点方案、体素成本、以及「为什么它不能当主表示法」
-   见 [docs/SDF融合体调研.md](docs/SDF融合体调研.md)。
+   见 [docs/SDF融合体调研.md](docs/SDF融合体调研.md)；解析推导、曲率/误差界与三处结论修正在
+   [docs/SDF数学推导与误差界.md](docs/SDF数学推导与误差界.md)（`python scripts/sdf_math.py` 可复现）。
 
 ## 依赖与版本
 
