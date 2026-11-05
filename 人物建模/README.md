@@ -34,6 +34,7 @@ python scripts/flow.py run all                  # 按工序推进；已过闸且
 python scripts/build.py clay                    # 白模四视图（判几何，无描边/无 bloom）
 python scripts/head_baseline.py                 # 头部顶点 hash + 30 条量尺
 python scripts/calibrate_guard.py --verify      # 验证视觉基线判别力并登记（换图用 --calibrate）
+python scripts/slice_math.py                    # 切片分析（先用 Blender 跑 slice_probe.py 出数据）
 python scripts/deliver.py                       # 一句话：进游戏 / 进作品集，现在行不行
 ```
 
