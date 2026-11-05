@@ -1,37 +1,55 @@
 # -*- coding: utf-8 -*-
-"""L2 部件 7/8：眼（眼窝位移 + 眼球/虹膜/睫毛贴片）。
+"""L2 部件 7/8：眼（phase 3 第二次尝试：换表示法，不叠实体）。
 
-phase 1 保持「平面 fan 贴壳」不变；phase 3 才改成眼球 + 眼睑实体。
+第一次尝试（已回退）在 5 层平面 fan 上叠眼球+眼睑，结果近共面 z-fighting。
+根因：所有贴片 `y = y_hit − d_i`，d 只差 0.6~3.8mm。
+
+本次改法（docs/数学模型与灵敏度.md §5.1 的工程落地）
+----------------------------------------------------
+定义**一张共享曲面** S(x,z)，所有层都在它上面取深度：
+
+    S(x,z) = y_hit(x,z) − LIFT − BULGE·exp(−((x−cx)/w)² − ((z−cz)/h)²)
+
+  · 眼白：S 的前表面 + 后表面(S+BACK_DEPTH) + 侧边封口 = 一个封闭透镜实体，
+    不再用平面 fan，也不再单独叠眼球。
+  · 虹膜/瞳孔/高光：以 S 为基准各减一个**显式常量** δ（0.5/0.8/1.0mm），
+    深度差是设计出来的，不是各层各自 conform 抢出来的。
+  · 上/下眼睑：沿 almond 弧的带，前层 S−LID_FRONT、后层 S+LID_THICK，
+    四条边封口 = 有厚度的实体壳。
+  · 睫毛/下眼缘线稿：同样用 S−δ 定位。
+
+严格球面 S={((x−cx)/R)²+...=1} 与眼窝的 5.2mm 高斯凹陷不兼容
+（球冠边缘会退到颅骨后面被吃掉），所以采用「脸面 + 高斯凸冠」的共享曲面：
+数学性质一样（单一参数化、显式深度层），且始终贴在眼窝里。
+
+BOSS 决策 A：只做静态实体，不绑眼睑骨/形态键。
 """
 import math
 
+import bmesh
 import bpy
 from mathutils import Vector
 
 from . import _base as B
-from meshkit import join, select_only
+from meshkit import join
 
-# phase 3（2026-11-05）：给眼睛补 y 方向体积。
-# 拆分前所有五官都是 `y = y_hit − d` 的平面贴片，侧面是贴纸。
-# 这里加两样静态实体（BOSS 决策 A：不绑眼睑骨/形态键）：
-#   · 眼球：扁椭球，位于眼窝后方，最前点与脸面齐平，不穿出
-#   · 上/下眼睑：平面带 conform 到脸面后 Solidify 出厚度
-LID_THICK = 0.0012          # 1.2mm，对应合同 gauge lid_thickness ≥ 0.8mm
-EYEBALL_DEPTH = 0.0080      # 眼球 y 半径（前后进深）
-LID_FRONT_OFFSET = 0.0006
+# ---- 共享曲面的深度层（单位 m；所有层互斥，不出现近共面竞争）----
+SURFACE_LIFT = 0.0018      # 整张眼面比眼窝前移
+BULGE = 0.0012             # 中心额外凸冠（球面感）
+BACK_DEPTH = 0.0060        # 眼白实体后表面深度
+# 层间深度必须大于「S 的分片线性插值误差」。BULGE=1.2mm 的凸冠用单个
+# 三角 fan 近似时误差可达 ~1mm，所以第一版 δ=0.3~1.0mm 会让虹膜局部穿到
+# 眼白后面，白模渲成扇形斑块。改成同心环精确采样 S + 把 δ 拉到 1~2.4mm。
+IRIS_DELTA = 0.0012
+PUPIL_DELTA = 0.0018
+HILITE_DELTA = 0.0024
+LASH_DELTA = 0.0028
+# 眼睑必须整体在眼白（S−0.0002）之前：前层 S−0.0020、后层 S−0.0008。
+LID_FRONT = 0.0020
+LID_THICK = 0.0012         # 1.2mm，对应合同 gauge lid_thickness ≥ 0.8mm
+LID_W = 0.0026             # 眼睑带在 z 方向的宽度
 
-# 2026-11-05 phase 3 第一次尝试：**失败，已停用**。
-# 做法：在原有 5 层平面 fan 之上再叠眼球椭球 + 上下眼睑 Solidify 壳。
-# 白模 out/clay_face_eye_closeup.png 显示一堆互相穿插的纸片；
-# 彩渲 out/m3_face_front.png 眼周出现碎玻璃状白色锯齿。
-# 根因（数学）：所有贴片共享同一个 y(x,z) = y_hit(x,z) − d_i，
-# d 只差 0.6~3.8mm；再叠一个有厚度的实体，多个近共面曲面在同一 (x,z)
-# 上争深度 → z-fighting，描边壳再把这些碎片勾成黑边。
-# 正确方向：不能「叠」，要「换表示」——去掉平面 sclera fan，
-# 用球面 S = {(x,y,z) | ((x−cx)/R)² + ((y−cy)/R)² + ((z−cz)/R)² = 1}
-# 当眼白，把 iris/pupil/高光投到这个球面的 BVH 上；眼睑用球面参数域
-# (θ, φ) 的带，不是沿 +Y 射线投到颅骨。这一步留到下一轮，不在这里加补丁。
-ENABLE_VOLUME = False
+ENABLE_VOLUME = True
 
 
 def _face_y(bvh, x, z):
@@ -39,39 +57,113 @@ def _face_y(bvh, x, z):
     return hit[0].y if hit[0] is not None else -0.061
 
 
-def make_eyeball(side, mats, bvh, cx, cz, w, hu, hd):
-    """扁椭球眼球：最前点 y = 脸面 y，向后填进眼窝。"""
-    yc = _face_y(bvh, cx, cz) + EYEBALL_DEPTH
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=16, radius=1.0,
-                                         location=(cx, yc, cz))
-    ob = bpy.context.object
-    ob.name = "eyeball_%s" % side
-    ob.scale = (w * 1.05, EYEBALL_DEPTH, (hu + hd) * 0.60)
-    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    ob.data.materials.append(mats["sclera"])
+def _surface(bvh, cx, cz, w, hu, hd):
+    """返回共享曲面 S(x,z)。所有部件必须只用这一个函数取 y。"""
+    hz = (hu + hd) * 0.60
+
+    def S(x, z):
+        bulge = BULGE * B.g((x - cx) / w) * B.g((z - cz) / hz)
+        return _face_y(bvh, x, z) - SURFACE_LIFT - bulge
+
+    return S
+
+
+def _recalc(ob):
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(ob.data)
+    bm.free()
+    ob.data.update()
+
+
+def _eyeball_shell(outline, S, cx, cz, name, mat):
+    """封闭透镜实体：前表面 = S 的**同心环精确采样**，后表面 = S + BACK_DEPTH。
+
+    单个三角 fan 近似 S 会有 ~1mm 误差（BULGE 凸冠非线性），
+    与虹膜 δ 同量级 → 局部穿插。三环采样把误差压到一个环内。
+    """
+    n = len(outline)
+    verts = [(cx, S(cx, cz) - 0.0002, cz)]
+    rings = []
+    for t in (0.35, 0.70, 1.0):
+        rings.append(len(verts))
+        for p in outline:
+            x = cx + (p.x - cx) * t
+            z = cz + (p.z - cz) * t
+            verts.append((x, S(x, z) - 0.0002, z))
+    back_c = len(verts)
+    verts.append((cx, S(cx, cz) + BACK_DEPTH, cz))
+    back_o = len(verts)
+    for p in outline:
+        verts.append((p.x, S(p.x, p.z) + BACK_DEPTH, p.z))
+    r0, r1, r2 = rings
+    faces = []
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append((0, r0 + i, r0 + j))
+        faces.append((r0 + i, r1 + i, r1 + j, r0 + j))
+        faces.append((r1 + i, r2 + i, r2 + j, r1 + j))
+        faces.append((back_c, back_o + j, back_o + i))
+        faces.append((r2 + i, r2 + j, back_o + j, back_o + i))
+    ob = B.mesh_from(verts, faces, name)
+    ob.data.materials.append(mat)
+    _recalc(ob)
+    for poly in ob.data.polygons:
+        poly.use_smooth = True
     return ob
 
 
-def make_lid(side, mats, bvh, upper, cx, cz, w, hu, hd):
-    """有厚度的上/下眼睑壳：先生成 XZ 平面带 → conform 到脸面 → Solidify。"""
-    n = 26
-    s = side
-    a, b = [], []
-    for i in range(n):
-        t = math.pi * i / (n - 1)
-        c, sn = math.cos(t), math.sin(t)
-        x = cx + w * c
-        z = cz + (hu * sn if upper else -hd * sn) + 0.24 * w * c
-        a.append(Vector((x, 0, z + w * 0.010)))
-        b.append(Vector((x, 0, z)))
-    tag = "upper" if upper else "lower"
-    ob = B.band(a, b, "lid_%s_%s" % (tag, s), mats["skin"])
-    B.conform(ob, bvh, LID_FRONT_OFFSET)
-    m = ob.modifiers.new("lid_thick", 'SOLIDIFY')
-    m.thickness = LID_THICK
-    m.offset = 0.0
-    select_only(ob)
-    bpy.ops.object.modifier_apply(modifier=m.name)
+def _disc(cx, cz, r, S, delta, name, mat, segs=32):
+    """贴在共享曲面 S 上的圆盘（虹膜/瞳孔/高光），δ 是显式深度。"""
+    pts = B.circle(cx, cz, r, segs)
+    verts = [(cx, S(cx, cz) - delta, cz)]
+    verts += [(p.x, S(p.x, p.z) - delta, p.z) for p in pts]
+    faces = [(0, 1 + i, 1 + (i + 1) % segs) for i in range(segs)]
+    ob = B.mesh_from(verts, faces, name)
+    ob.data.materials.append(mat)
+    for poly in ob.data.polygons:
+        poly.use_smooth = True
+    return ob
+
+
+def _lid(arc, S, upper, name, mat):
+    """沿 almond 弧的有厚度眼睑壳，四条边全封口。"""
+    n = len(arc)
+    dz = LID_W if upper else -LID_W
+    a, b, a2, b2 = [], [], [], []
+    for p in arc:
+        x, z = p.x, p.z
+        zo = z + dz
+        ya = S(x, z) - LID_FRONT
+        yb = S(x, zo) - LID_FRONT
+        a.append((x, ya, z))
+        b.append((x, yb, zo))
+        a2.append((x, ya + LID_THICK, z))
+        b2.append((x, yb + LID_THICK, zo))
+    verts = a + b + a2 + b2           # a=0..n-1, b=n.., a2=2n.., b2=3n..
+    faces = []
+    for i in range(n - 1):
+        j = i + 1
+        faces.append((i, j, n + j, n + i))
+        faces.append((2 * n + i, 3 * n + i, 3 * n + j, 2 * n + j))
+        faces.append((i, 2 * n + i, 2 * n + j, j))
+        faces.append((n + i, n + j, 3 * n + j, 3 * n + i))
+    faces.append((0, n, 3 * n, 2 * n))
+    faces.append((n - 1, 2 * n + n - 1, 3 * n + n - 1, 2 * n - 1))
+    ob = B.mesh_from(verts, faces, name)
+    ob.data.materials.append(mat)
+    _recalc(ob)
+    for poly in ob.data.polygons:
+        poly.use_smooth = True
+    return ob
+
+
+def _set_band_y(ob, S, delta):
+    """把 XZ 平面带的所有顶点按共享曲面定位（不再 conform 到颅骨）。"""
+    for v in ob.data.vertices:
+        v.co.y = S(v.co.x, v.co.z) - delta
+    ob.data.update()
     return ob
 
 
@@ -86,8 +178,59 @@ def socket_deltas(x, y, z, ex):
     return dy
 
 
-def make_eye(side, mats, bvh):
-    """原 head.py:412-473。"""
+def make_eye_volume(side, mats, bvh):
+    """共享曲面版：所有层用同一个 S(x,z)，深度差为显式常量。"""
+    s = side
+    k = B.eye_size()
+    cx, cz = B.eye_x() * s, B.sz(1.500)
+    w, hu, hd = B.EYE_W * k, B.EYE_HU * k, B.EYE_HD * k
+    S = _surface(bvh, cx, cz, w, hu, hd)
+
+    outline = [Vector((p.x + cx, 0, p.z + cz))
+               for p in B.almond(w, hu, hd, 0.24 * s)]
+    parts = [_eyeball_shell(outline, S, cx, cz, "eyeball_%s" % s, mats["sclera"])]
+
+    parts.append(_disc(cx, cz + w * B.EYE_IRIS_DZ, w * B.EYE_IRIS_R, S,
+                       IRIS_DELTA, "iris_%s" % s, mats["iris"]))
+    parts.append(_disc(cx, cz + w * B.EYE_IRIS_DZ, w * B.EYE_PUPIL_R, S,
+                       PUPIL_DELTA, "pupil_%s" % s, mats["pupil"]))
+    parts.append(_disc(cx - w * B.EYE_HI1_DX * s, cz + w * B.EYE_HI1_DZ,
+                       w * B.EYE_HI1_R, S, HILITE_DELTA, "hi1_%s" % s,
+                       mats["white_emit"], 20))
+    parts.append(_disc(cx + w * B.EYE_HI2_DX * s, cz - w * B.EYE_HI2_DZ,
+                       w * B.EYE_HI2_R, S, HILITE_DELTA, "hi2_%s" % s,
+                       mats["white_emit"], 16))
+
+    # 上/下睫毛与下眼缘：线稿层，也用 S 定位
+    n = 26
+    upper_arc, lower_arc = [], []
+    la, lb, low_a, low_b = [], [], [], []
+    for i in range(n):
+        t = math.pi * i / (n - 1)
+        c, sn = math.cos(t), math.sin(t)
+        x = cx + w * c
+        zu = cz + hu * sn + 0.24 * w * c
+        zl = cz - hd * sn + 0.24 * w * c
+        th = w * (B.EYE_LASH_TH0 + B.EYE_LASH_TH1 * max(0.0, c * s))
+        upper_arc.append(Vector((x, 0, zu)))
+        lower_arc.append(Vector((x, 0, zl)))
+        la.append(Vector((x, 0, zu + w * B.EYE_LASH_DZ)))
+        lb.append(Vector((x - w * B.EYE_LASH_DX * s, 0, zu - th)))
+        low_a.append(Vector((x, 0, zl)))
+        low_b.append(Vector((x, 0, zl - w * B.EYE_LOW_DZ)))
+    parts.append(_set_band_y(B.band(la, lb, "lash_%s" % s, mats["lash"]), S, LASH_DELTA))
+    parts.append(_set_band_y(B.band(low_a, low_b, "lowline_%s" % s,
+                                    mats["lash_soft"]), S, LASH_DELTA))
+
+    # 眼睑实体（上/下），前层 S−LID_FRONT、后层 +LID_THICK
+    parts.append(_lid(upper_arc, S, True, "lid_upper_%s" % s, mats["skin"]))
+    parts.append(_lid(lower_arc, S, False, "lid_lower_%s" % s, mats["skin"]))
+
+    return join(parts, name="eye_%s" % s)
+
+
+def make_eye_flat(side, mats, bvh):
+    """拆分前的 5 层平面 fan 实现（保留作回退对照）。"""
     s = side
     k = B.eye_size()
     cx, cz = B.eye_x() * s, B.sz(1.500)
@@ -95,37 +238,27 @@ def make_eye(side, mats, bvh):
     shape = [Vector((p.x + cx, 0, p.z + cz))
              for p in B.almond(w, hu, hd, 0.24 * s)]
     parts = []
-    w_ob = B.fan(shape, f"sclera_{s}", mats["sclera"])
+    w_ob = B.fan(shape, "sclera_%s" % s, mats["sclera"])
     B.conform(w_ob, bvh, 0.0012)
     parts.append(w_ob)
-
-    # phase 2：虹膜/瞳孔/高光的尺寸随眼宽 w 同比例缩放（w 已含 eye_size_scale k）。
-    # 拆分前 w=0.0186 时，下面每个系数都精确还原原来的绝对常量。
     iris = B.fan(B.circle(cx, cz + w * B.EYE_IRIS_DZ, w * B.EYE_IRIS_R),
-                 f"iris_{s}", mats["iris"])
+                 "iris_%s" % s, mats["iris"])
     B.conform(iris, bvh, 0.0024)
     parts.append(iris)
-
     pupil = B.fan(B.circle(cx, cz + w * B.EYE_IRIS_DZ, w * B.EYE_PUPIL_R),
-                  f"pupil_{s}", mats["pupil"])
+                  "pupil_%s" % s, mats["pupil"])
     B.conform(pupil, bvh, 0.0030)
     parts.append(pupil)
-
     hi1 = B.fan(B.circle(cx - w * B.EYE_HI1_DX * s, cz + w * B.EYE_HI1_DZ,
-                         w * B.EYE_HI1_R, 20),
-                f"hi1_{s}", mats["white_emit"])
+                         w * B.EYE_HI1_R, 20), "hi1_%s" % s, mats["white_emit"])
     B.conform(hi1, bvh, 0.0038)
     parts.append(hi1)
-
     hi2 = B.fan(B.circle(cx + w * B.EYE_HI2_DX * s, cz - w * B.EYE_HI2_DZ,
-                         w * B.EYE_HI2_R, 16),
-                f"hi2_{s}", mats["white_emit"])
+                         w * B.EYE_HI2_R, 16), "hi2_%s" % s, mats["white_emit"])
     B.conform(hi2, bvh, 0.0038)
     parts.append(hi2)
-
-    # 上睫毛：外缘抬起、内缘压到眼白上，形成有厚度的上眼睑
     n = 26
-    a_pts, b_pts = [], []
+    a_pts, b_pts, a2, b2 = [], [], [], []
     for i in range(n):
         t = math.pi * i / (n - 1)
         c, sn = math.cos(t), math.sin(t)
@@ -134,28 +267,18 @@ def make_eye(side, mats, bvh):
         th = w * (B.EYE_LASH_TH0 + B.EYE_LASH_TH1 * max(0.0, c * s))
         a_pts.append(Vector((x, 0, z + w * B.EYE_LASH_DZ)))
         b_pts.append(Vector((x - w * B.EYE_LASH_DX * s, 0, z - th)))
-    lash = B.band(a_pts, b_pts, f"lash_{s}", mats["lash"])
-    B.conform(lash, bvh, 0.0034)
-    parts.append(lash)
-
-    # 下眼缘细线
-    a2, b2 = [], []
-    for i in range(n):
-        t = math.pi * i / (n - 1)
-        c, sn = math.cos(t), math.sin(t)
-        x = cx + w * c
         z = cz - hd * sn + 0.24 * w * c
         a2.append(Vector((x, 0, z)))
         b2.append(Vector((x, 0, z - w * B.EYE_LOW_DZ)))
-    low = B.band(a2, b2, f"lowline_{s}", mats["lash_soft"])
+    lash = B.band(a_pts, b_pts, "lash_%s" % s, mats["lash"])
+    B.conform(lash, bvh, 0.0034)
+    parts.append(lash)
+    low = B.band(a2, b2, "lowline_%s" % s, mats["lash_soft"])
     B.conform(low, bvh, 0.0020)
     parts.append(low)
+    return join(parts, name="eye_%s" % s)
 
-    # phase 3 静态实体暂时停用（ENABLE_VOLUME=False，原因见模块顶部）。
-    # 保留函数是为了不丢掉这次失败的结论；启用前必须先换表示法。
-    if ENABLE_VOLUME:
-        parts.append(make_eyeball(s, mats, bvh, cx, cz, w, hu, hd))
-        parts.append(make_lid(s, mats, bvh, True, cx, cz, w, hu, hd))
-        parts.append(make_lid(s, mats, bvh, False, cx, cz, w, hu, hd))
 
-    return join(parts, name=f"eye_{s}")
+def make_eye(side, mats, bvh):
+    return make_eye_volume(side, mats, bvh) if ENABLE_VOLUME else \
+        make_eye_flat(side, mats, bvh)

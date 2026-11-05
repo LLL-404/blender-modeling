@@ -95,6 +95,30 @@ def _mid_front_y(cos, lo, hi, xmax=0.003):
     return min(sel) if sel else None
 
 
+def _measure_lid(M, bvh):
+    """几何实测上眼睑厚度：同一 (x,z) 上前后层的 y 差。
+
+    不是读常量 —— 读常量只能证明代码写了 1.2mm，不能证明网格真有厚度。
+    """
+    import head_parts._base as B
+    import head_parts.eye as E
+    from mathutils import Vector
+
+    cx, cz = B.eye_x(), B.sz(1.500)
+    w, hu, hd = B.EYE_W, B.EYE_HU, B.EYE_HD
+    S = E._surface(bvh, cx, cz, w, hu, hd)
+    arc = [Vector((p.x + cx, 0, p.z + cz))
+           for p in B.almond(w, hu, hd, 0.24)]
+    lid = E._lid(arc, S, True, "probe_lid", M["skin"])
+    n = len(arc)
+    diffs = [lid.data.vertices[2 * n + i].co.y - lid.data.vertices[i].co.y
+             for i in range(n)]
+    # 探针对象不参与 Head hash，用完删掉
+    bpy.data.objects.remove(lid, do_unlink=True)
+    return {"min_mm": round(1000.0 * min(diffs), 4),
+            "max_mm": round(1000.0 * max(diffs), 4)}
+
+
 def measure():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     M = matsmod.set_all()
@@ -159,6 +183,8 @@ def measure():
     ezs = [v.co.z for v in ear.data.vertices]
     exs = [v.co.x for v in ear.data.vertices]
 
+    lid = _measure_lid(M, headmod.make_bvh(skull))
+
     doc = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "blender": bpy.app.version_string,
@@ -190,6 +216,8 @@ def measure():
             "cheek_width_r": round(cheek_w_r, 6) if cheek_w_r else None,
             "chin_front_y_mm": round(1000.0 * min(chin_pts), 3) if chin_pts else None,
             "cheek_front_y_mm": round(1000.0 * min(cheek_pts), 3) if cheek_pts else None,
+            "lid_thickness_min_mm": lid["min_mm"],
+            "lid_thickness_max_mm": lid["max_mm"],
         },
         "_caliber": "head_width/depth/w_over_len 用含耳的 Head bbox（与 spec/reference.json 同口径）；skull_* 是头骨本体。cheek_front_y 只取 |x|∈[60,95]mm 的颧骨带，避免被鼻尖主导。",
         "_note": "phase 0 基线。拆 head.py 之后要求 hash 完全一致；归一化阶段允许变，但要逐条报哪些 gauge 动了。",
