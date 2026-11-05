@@ -425,6 +425,10 @@ blender -b --factory-startup --python opt/eval_geom.py -- --use-best
    - 身体仍是 5mm 体素重网格（路线 2 的 E 未做）
    - 尚未接「从参考图拟合轮廓」（路线 2 的 C 未做）
    详见 [CHANGELOG.md](CHANGELOG.md) v0.14.0 与 [docs/建模方法研究.md](docs/建模方法研究.md)。
+8. **没有 SDF smooth-union 融合**：唯一的「融合」是 `meshkit.voxel_remesh()` 的硬体素重网格
+   （身体 5mm、手 2mm），全仓 0 处 metaball / `smin` / 隐式曲面。本机 Blender 5.2.2
+   原生 SDF 几何节点实测可用但未接入；局部试点方案、体素成本、以及「为什么它不能当主表示法」
+   见 [docs/SDF融合体调研.md](docs/SDF融合体调研.md)。
 
 ## 依赖与版本
 

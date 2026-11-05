@@ -1,5 +1,16 @@
 # 变更记录
 
+## 2026-11-05 / v0.20.1 — SDF 融合体调研（只看，未实现）
+
+BOSS 指出「融合体」应是 SDF。本轮只研究，不动建模代码。
+
+- 新增 `docs/SDF融合体调研.md`：大白话定义、`smin` 公式、许可证/成本、与当前控制笼表示法的冲突、体素成本估算、局部试点（左耳+头骨）的判据与 NEVER 清单
+- 新增 `scripts/probe_sdf_nodes.py`（只读）：实测本机 Blender 5.2.2 LTS 有 10 个 SDF 相关 RNA 类、8 个节点可创建
+- **更正上一轮判断**：原说「SDF 要装库、整套拓扑/UV/绑定重做」已过时 —— Blender 5.0 起原生支持，本机零安装可用，成本降到「局部烘焙 + 重传属性」
+- 关键限制：`SDFGridBoolean.operation` 实测只有 `INTERSECT/UNION/DIFFERENCE`，**没有 smooth-union**；圆滑过渡走 `SDFGridFillet` 或「Offset(−k) → UNION → Offset(+k)」
+- 结论：局部可用（耳根 ROI 0.5mm 体素约 4.6MB），整头不可行（约 366MB 且毁掉控制笼/UV/权重/描边）；SDF 产物是烘焙网格，与「AI 改参数就能改模型」的目标冲突，只能当局部后处理
+- 进主链的四个前置条件现在一条都不满足，故不实现
+
 ## 2026-11-05 / v0.20.0 — 工序止血 + 线稿去重 + 量尺补齐
 
 **流程（v2 闸门，GATE_VERSION 1 → 2）**
