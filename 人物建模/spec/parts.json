@@ -229,13 +229,17 @@
         "lib/look.py",
         "cfg.py",
         "params/profile.json",
-        "lib/head_parts"
+        "lib/head_parts",
+        "lib/qipao.py",
+        "lib/accessories.py",
+        "lib/assemble.py"
       ],
       "evidence": [
         "out/m5_face_front.png",
         "out/m5_body_front.png",
         "out/m5_body_q34.png",
-        "out/m5_body_side.png"
+        "out/m5_body_side.png",
+        "out/m5_face_q34.png"
       ],
       "probes": [
         {
@@ -248,9 +252,22 @@
       ],
       "metrics": [],
       "review": [
-        "领口/肩线/袖口/裙摆没有穿模或悬空",
-        "服装与人体的层次清楚，衣料有厚度不是贴纸",
-        "裙褶左右不完全镜像，正面中线是褶峰"
+        "立领与挂脖 V 左右对称，盘扣与水滴吊坠在领口中线，不歪不浮",
+        "腰身读得出来：腰部比胸口与胯部都窄，侧面不是直筒（对照参考图的修身轮廓）",
+        "双侧开衩从胯上起、边缘有包边；站立时能看见开衩豁口与露出的腿",
+        "侧边 3 组交叉绑带 + 金铆钉：左右对称、组与组分得开、不穿进裙面",
+        "雪纺飘袖半透明（能透出手臂轮廓与背景），袖口毛边不规则",
+        "配饰位置：墨镜架在发顶、蝶饰在耳上、吊坠在领口，均不漂浮不陷进头发",
+        "无穿模：颈、臂、裙摆与人体净空可见，没有白面插出或黑缝"
+      ],
+      "review_kinds": [
+        "look",
+        "look",
+        "look",
+        "look",
+        "look",
+        "look",
+        "look"
       ]
     },
     {
