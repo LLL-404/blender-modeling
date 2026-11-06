@@ -13,6 +13,7 @@ from mathutils import Vector
 import cfg
 import charparams
 import head as headmod
+import body as bodymod
 from meshkit import (superellipse_ring, loft, resample, tube, resample_path,
                      join, shade_smooth, mesh_from, select_only)
 
@@ -1053,6 +1054,436 @@ def _cards_fringe():
     return parts
 
 
+# ---------------- 低马尾（2026-11-05，银发旗袍少女 v2，spec §二#1） ----------------
+# 形制（设定书§三.3 剪影语言）：后脑低位扎起的低马尾、自然垂落在背/肩侧；
+# 刘海沿用 cards 形制 v5 的「中分两片」语言（轻量重写：段数减半，面数进预算）；
+# 蓝挑染 = 挑染条（鬓外 1 条 + 尾内 2 条），材质 look.toon 蓝底（_streak_mat）。
+# 与旧形制的关系：只新增函数 + build() 的 "ponytail" 分支；bob/cards/long 原路径
+# 一个字节不动，profile 的 hair.style 改回即回退。
+#
+# 坐标口径（与 _bob_shell 同一做法，换头身比自动跟随，不再重演 _hz 补课）：
+#   纵向 t = (z − 下巴)/头长；横向 = 颅骨名义半宽 U 的分数（U = head_rows max rx）。
+#   当前 1.68m/6.5 头身：chin 1.4220、h 0.2580、U 0.1049。
+#   扎点 t=−0.194 → z 1.372（颈柱顶 1.4309 与头底 1.4220 之间的项背，真「低位」）。
+_PONY_TIE_T = -0.194
+_PONY_GATHER = [
+    # t,     半张角(°, 以正后 180° 为中心), 外扩(m), 向扎点收拢(0=贴头骨..1=扎点锥)
+    # 顶两环全环（180°）且外扩 4-6mm（发帽 7mm）：补 cards 形制里「鲍伯壳」承担的
+    # 前脸背景 —— 没有它，刘海缝里露的是头皮（_v2_hair_front 第一版整片粉）。
+    # 前脸发际底线 t=0.593（z≈1.575 眉线）：第二版 1.545 盖住了眼睛上缘，实测退回。
+    (0.690, 180.0, 0.004, 0.00),
+    (0.640, 180.0, 0.006, 0.00),
+    (0.593, 180.0, 0.006, 0.00),
+    # 耳带（耳廓 z 1.500-1.560、耳尖 x 0.1123，dimprobe2 实测）：外扩 10-13mm。
+    # 两个教训（_v2_hair_side/q34 第 3-5 版实测）：
+    #   ① 收拢系数在耳带必须为 0 —— pull=0.06/0.16 把环往中轴拉（a=90° 处
+    #      x 0.117→0.102），耳尖又戳出来；
+    #   ② 半张角不能开到 150-160°——那是把**前脸**扇区也盖到 z 1.543/1.556，
+    #      q34 里左眼被白色背景片盖掉半只。耳带行只跨耳方位（a≥62°+），
+    #      前脸 a<50° 的背景底缘就停在眉线环 1.575。
+    (0.519, 130.0, 0.010, 0.00),
+    (0.470, 118.0, 0.013, 0.00),
+    (0.340, 106.0, 0.014, 0.02),
+    (0.186, 100.0, 0.011, 0.20),
+    (-0.008, 92.0, 0.008, 0.52),
+    (-0.085, 85.0, 0.008, 0.74),
+    (-0.139, 79.0, 0.007, 0.90),
+    (-0.194, 62.0, 0.006, 1.00),
+]
+_PONY_GATHER_SEG = 26       # 收拢片每环顶点数（上缘埋进发帽、下缘绕马尾根）
+_PONY_TIE_RX = 0.24         # 扎点锥末端椭圆半宽 / U（发绳缠住的粗度）
+_PONY_TIE_RY = 0.20         # 扎点锥末端椭圆半厚 / U
+_PONY_TIE_CY = 0.74         # 扎点中心 y / U（颈柱后缘 y≈0.06-0.07，锥底悬在项背外）
+
+
+def _pony_unit():
+    """颅骨名义半宽（head_rows 的 max rx）。马尾全部横向尺寸的基准。"""
+    return max(r[1] for r in headmod.head_rows())
+
+
+def _pony_z(t):
+    """t 分数（0=下巴，1=骨相头顶）→ 世界 z。"""
+    chin, top = _chin_top()
+    return chin + (top - chin) * t
+
+
+def _streak_mat():
+    """蓝挑染材质（hair.hair_highlight_color 建议旋钮，见交付 honestNotes）。
+
+    与 look.hair_material 同一 toon 骨架/同一 ramp 位置（pos 0/0.56/0.86），
+    只是底色换蓝：亮面 = 参考图挑染条的饱和蓝，暗面按同口径反推 ramp 系数。
+    按名取缓存：同进程多次 build 不重复建材质。
+    """
+    m = bpy.data.materials.get("hair_streak_blue")
+    if m is not None:
+        return m
+    import look
+    base = tuple(charparams.get("hair.hair_highlight_color",
+                                (0.16, 0.38, 0.88)))
+    sc = tuple(charparams.get("hair.hair_highlight_shadow",
+                              (0.06, 0.16, 0.45)))
+    shadow = tuple(min(1.0, sc[i] / max(base[i], 1e-3)) for i in range(3))
+    mid = tuple(min(1.0, (0.55 * base[i] + 0.45 * sc[i]) / max(base[i], 1e-3))
+                for i in range(3))
+    return look.toon("hair_streak_blue", base, shadow=shadow, mid=mid,
+                     light=(1.0, 1.0, 1.0), pos=(0.0, 0.56, 0.86), strength=1.0)
+
+
+def _pony_fringe():
+    """中分两片发帘：_cards_fringe v5 的轻量重写（同一分缝语言，面数减半）。
+
+    语言继承（不改）：内缘短（下巴+140mm）外缘长（+170mm）的中分八字帘、
+    顶缘埋进发帽全宽段、表面沿头骨 _se_pt 外扩 20→14mm、逐列哈希抖动发梢。
+    变化只有 n_u/n_v 30×22 → 18×12（低马尾预算 4-6k，cards 刘海一片就要 2848）。
+    """
+    import meshkit
+    from meshkit import mesh_from
+
+    chin, top = _chin_top()
+    rows = resample(headmod.head_rows(), "z", 0.004)
+    z_top = top - 0.026          # 起点埋进发帽全宽段（同 _cards_fringe）
+    n_u, n_v = 18, 12
+    W = n_u + 1
+    parts = []
+    for si, (d0, d1) in enumerate(((-58.0, -2.0), (2.0, 58.0))):
+        verts = []
+        for i in range(n_v + 1):
+            v = i / n_v
+            for j in range(n_u + 1):
+                u = j / n_u
+                deg = d0 + (d1 - d0) * u
+                # 内缘短、外缘长（同 v5：u=0 外侧太阳穴、u=1 内侧中分缝）
+                z_end = chin + 0.140 + 0.030 * u
+                q = si * 101 + j          # 逐列抖动，哈希不用正弦（同 v5）
+                z_end += 0.012 * (_hash01(q * 1.7 + 0.3) - 0.5)
+                z_end += 0.006 * (_hash01(q * 3.1 + 2.4) - 0.5)
+                z = z_top + (z_end - z_top) * v
+                row = _row_at(rows, z)
+                row = (z,) + tuple(row[1:])
+                off = _HAIR_T + 0.014 - 0.006 * v
+                verts.append(_se_pt(row, math.radians(deg), off))
+        faces = []
+        for i in range(n_v):
+            for j in range(n_u):
+                a = i * W + j
+                faces.append((a, a + W, a + W + 1, a + 1))
+        ob = mesh_from(verts, faces, "pony_bangs%d" % si)
+        layer = ob.data.uv_layers.new(name="UVMap")
+        for poly in ob.data.polygons:
+            for li in poly.loop_indices:
+                vid = ob.data.loops[li].vertex_index
+                i, j = divmod(vid, W)
+                layer.data[li].uv = (j / n_u, i / n_v)
+        # 1.8mm 同 _cards_fringe：更厚正面读成塑料板
+        meshkit.solidify(ob, thickness=0.0018, offset=0.0)
+        parts.append(ob)
+    return parts
+
+
+def _pony_gather():
+    """后脑收拢片：从发帽最宽段内侧向下，收到项背扎点的一圈小椭圆。
+
+    上半段贴头骨（_se_pt 外扩，半张角 ~120°，盖住后脑与耳上侧）；
+    t<0.07 起向扎点锥收拢（半张角收到 62°、半径收到 0.30U），下缘 open arc
+    绕在马尾根后侧 —— 正面看是「扎起来的发根」，不是一张垂下的布。
+    上缘 t=0.690（z 1.600）以 5mm 外扩埋进发帽（发帽同高度 7mm 外扩）内侧。
+    """
+    rows = resample(headmod.head_rows(), "z", 0.006)
+    U = _pony_unit()
+    tie = Vector((0.0, _PONY_TIE_CY * U, _pony_z(_PONY_TIE_T)))
+    rx_t, ry_t = _PONY_TIE_RX * U, _PONY_TIE_RY * U
+    seg = _PONY_GATHER_SEG
+    rings = []
+    for t, half, out, pull in _PONY_GATHER:
+        z = _pony_z(t)
+        row = _row_at(rows, z)
+        row = (z,) + tuple(row[1:])
+        a0 = math.radians(180.0 - half)
+        a1 = math.radians(180.0 + half)
+        pts = []
+        for i in range(seg):
+            a = a0 + (a1 - a0) * i / (seg - 1)
+            sa, ca = math.sin(a), math.cos(a)
+            skull = _se_pt(row, a, out)
+            # 锥环：绕马尾根的椭圆（a=180 是正后，cos<0 → y 取 tie.y − ry·ca）
+            cone = Vector((rx_t * sa, tie.y - ry_t * ca, z))
+            pts.append(skull * (1.0 - pull) + cone * pull)
+        rings.append(pts)
+    ob = loft(rings, cap_start=False, cap_end=False, name="hair_pony_gather")
+    select_only(ob)
+    m = ob.modifiers.new("Solidify", 'SOLIDIFY')
+    m.thickness = 0.005
+    m.offset = 0.0
+    bpy.ops.object.modifier_apply(modifier=m.name)
+    return ob
+
+
+def _pony_tie_knot():
+    """发绳小结：绕扎点锥的水平椭圆环（银白发色，参考图发绳为浅色）。"""
+    U = _pony_unit()
+    cy, cz = _PONY_TIE_CY * U, _pony_z(_PONY_TIE_T)
+    pts = []
+    for i in range(16):
+        a = 2.0 * math.pi * i / 16.0
+        pts.append(Vector((_PONY_TIE_RX * U * math.cos(a),
+                           cy + _PONY_TIE_RY * U * math.sin(a), cz)))
+    w = 0.048 * U
+    return _strand(pts, [w] * len(pts), w, seg=8, step=0.02)
+
+
+def _pony_ear_flaps():
+    """耳盖小片 ×2：罩住耳尖从发帽檐口（z 1.5554）与收拢片顶缘之间漏出的月牙。
+
+    耳廓 z 1.500-1.560、耳尖 x 0.1123（dimprobe2 实测）；收拢片顶环 1.556
+    （外扩 13mm）以下由收拢片自己盖，1.556-1.585 这 3cm 高的缝里发帽只有
+    7mm 外扩、罩不住耳尖。补一条只跨耳方位（a=90°±35°）的**小**弧片：
+    外扩从 12mm 渐收到 8mm 与发帽齐平 —— 第三版做成 55-72° 大弧 + 全程
+    10-13mm 外扩，在头上渲出一圈「盔檐」（_v2_hair_side/q34 实测），就是
+    贪宽贪厚的结果；这里收窄收薄。
+    """
+    rows = resample(headmod.head_rows(), "z", 0.004)
+    seg = 12
+    parts = []
+    for s in (-1, 1):
+        rings = []
+        for t, half, out in ((0.516, 45.0, 0.012),
+                             (0.564, 45.0, 0.010),
+                             (0.628, 42.0, 0.007)):
+            z = _pony_z(t)
+            row = _row_at(rows, z)
+            row = (z,) + tuple(row[1:])
+            a_mid = math.radians(90.0 * s)
+            a0 = a_mid - math.radians(half)
+            a1 = a_mid + math.radians(half)
+            pts = []
+            for i in range(seg):
+                a = a0 + (a1 - a0) * i / (seg - 1)
+                pts.append(_se_pt(row, a, out))
+            rings.append(pts)
+        ob = loft(rings, cap_start=False, cap_end=False,
+                  name="hair_pony_earflap")
+        select_only(ob)
+        m = ob.modifiers.new("Solidify", 'SOLIDIFY')
+        m.thickness = 0.003
+        m.offset = 0.0
+        bpy.ops.object.modifier_apply(modifier=m.name)
+        parts.append(ob)
+    return parts
+
+
+def _garment_back_y(z):
+    """服装外表面背侧 y（含 solidify），马尾垂坠路径的让位下界（整合 2026-11-06）。
+
+    马尾原按「裸背」留隙（_pony_tail 注释：ryb 0.099~0.113）；整合后旗袍后幅
+    全覆盖（grow+relax 外放 + 3mm solidify），腰段背表面比裸背外扩 15~25mm，
+    尾束 z<1.08 段实测埋进旗袍 -4.7~-12.6mm（out/_v2_probe_anchor.py [tailgap]）。
+    这里按旗袍**同一参数面**（qipao._surf 的 ryb+cy，加 3mm solidify）取下界；
+    shirt 回退时衬衫背侧 ≤ 旗袍口径（无 relax 外放），此下界只会更松不会穿。
+    qipao 不可用时退回「裸背 + 24mm」包络（grow+relax+solidify 的量级上限）。
+    """
+    rows = resample(bodymod.torso_rows(), "z", cfg.RESAMPLE_STEP)
+    try:
+        import qipao as qipaomod
+        rx, ryf, ryb, cy, p = qipaomod._surf(z, rows)
+        return cy + ryb + 0.003
+    except Exception:
+        if z <= rows[0][0]:
+            r = rows[0]
+        elif z >= rows[-1][0]:
+            r = rows[-1]
+        else:
+            r = rows[-1]
+            for a, b in zip(rows, rows[1:]):
+                if a[0] <= z <= b[0]:
+                    f = (z - a[0]) / max(1e-9, b[0] - a[0])
+                    r = tuple(a[i] + (b[i] - a[i]) * f for i in range(6))
+                    break
+        return r[3] + r[4] + 0.024
+
+
+def _back_clear(pts, half_t):
+    """尾束控制点背侧让位：y 下界 = 服装背表面 + 半厚 + 2.5mm（z<1.34 且 y>0）。
+
+    用 max(原值, 下界)——原本已让开的段逐位不动，只推埋进服装的段。
+    z<1.34（领底环 1.332 + solidify）以上不推：扎点/项背段悬在领后空中。
+    """
+    out = []
+    for p in pts:
+        if p.z < 1.34 and p.y > 0.0:
+            ymin = _garment_back_y(p.z) + half_t + 0.0025
+            if p.y < ymin:
+                p = Vector((p.x, ymin, p.z))
+        out.append(p)
+    return out
+
+
+def _pony_tail():
+    """下垂马尾束：3 主缕（沿背中线）+ 左右各 1 肩侧缕 + 1 长挑束（−x 侧）。
+
+    走向：从扎点锥内出发，先贴项背（y 0.72U）再向后离背（y 1.10U±），
+    躯干背后缘 ryb 0.099~0.113（bust/waist），发束中心 y≥1.0U 才不穿背。
+    整合 2026-11-06：垂落段过 _back_clear —— 旗袍后幅全覆盖后腰段背表面
+    外扩 15~25mm，原路径 z<1.08 埋进旗袍（探针实测），现按服装背表面让位，
+    尾束读作「垂搭在旗袍背面」。
+    分缕间距（_clumps 的教训）：主缕中心距 0.24U（25mm）、全宽 0.20U（21mm）
+    ——留 4mm 真空缝，缕才不会被 smooth 读成一整块布（第一版 0.135U 间距 +
+    0.15U 半宽整体重叠，侧面渲成一块「披风」，_v2_hair_side 实测）。
+    末梢 z 到腰线（cfg.WAIST_Z）附近，属「自然垂落在背/肩侧」的中长马尾。
+    widths/thick 传的是**半径**（同 _strand 口径）。
+    """
+    U = _pony_unit()
+    tie_z = _pony_z(_PONY_TIE_T)
+    z_sh = cfg.SHOULDER_Z        # 1.290
+    z_bu = cfg.BUST_Z + 0.009    # 1.159
+    z_wa = cfg.WAIST_Z
+    out = []
+
+    def main_pts(x0):
+        # x0 为 U 分数；主缕沿背中线近直地垂落（背视要读成**一束**：
+        # 第 5 版 x 漂移 ×1.35 + 半宽 0.09U，背面散成「喷泉」、缕间露出
+        # 背景粉底 —— 改成相邻缕 1mm 搭边（_clumps 的沟壑教训在马尾上
+        # 反着用：这里要的是实心束 + 一条浅沟，不是分叉）。
+        return [Vector((x0 * 0.55 * U, 0.72 * U, tie_z + 0.010)),
+                Vector((x0 * 0.85 * U, 0.86 * U, z_sh + 0.010)),
+                Vector((x0 * 1.00 * U, 1.00 * U, z_bu)),
+                Vector((x0 * 0.95 * U, 1.10 * U, z_wa + 0.010)),
+                Vector((x0 * 0.85 * U, 1.12 * U, z_wa - 0.060))]
+    main_w = [0.105 * U, 0.115 * U, 0.105 * U, 0.038 * U]
+    for k in (-1, 0, 1):
+        out.append(_strand(_back_clear(main_pts(0.11 * k), 0.055 * U),
+                           main_w, 0.055 * U, seg=8, step=0.022))
+    # 肩侧缕：贴着主束外缘垂到肩胛（两侧对称）
+    for s in (-1, 1):
+        pts = [Vector((0.14 * U * s, 0.74 * U, tie_z + 0.006)),
+               Vector((0.26 * U * s, 0.88 * U, z_sh - 0.010)),
+               Vector((0.36 * U * s, 0.99 * U, cfg.BUST_Z)),
+               Vector((0.39 * U * s, 1.05 * U, z_wa + 0.045)),
+               Vector((0.39 * U * s, 1.04 * U, z_wa + 0.020))]
+        out.append(_strand(_back_clear(pts, 0.048 * U),
+                           [0.090 * U, 0.100 * U, 0.090 * U, 0.032 * U],
+                           0.048 * U, seg=8, step=0.022))
+    # 长挑束：−x 侧（与鬓外挑染同侧），垂得最长，甩出背平面一点
+    pts = [Vector((-0.14 * U, 0.76 * U, tie_z + 0.004)),
+           Vector((-0.30 * U, 0.92 * U, z_sh)),
+           Vector((-0.48 * U, 1.02 * U, cfg.BUST_Z + 0.02)),
+           Vector((-0.55 * U, 1.08 * U, z_wa + 0.04)),
+           Vector((-0.56 * U, 1.06 * U, z_wa - 0.055))]
+    out.append(_strand(_back_clear(pts, 0.050 * U),
+                       [0.095 * U, 0.105 * U, 0.095 * U, 0.034 * U],
+                       0.050 * U, seg=8, step=0.022))
+    return out
+
+
+def _pony_locks():
+    """长鬓发：每侧 2 缕（外长内短），从太阳穴垂过肩，外缕到上胸。
+
+    参考图语言：脸侧两片长发披在胸前（蝶饰/墨镜之外的头发部分）。
+    第一版（_v2_hair_front/side 实测）起点埋在脸面内（x 0.70U, y −0.30U
+    在 z 1.53 的脸面之后），读成「从脖子里戳出来的杆」—— 起点外移到
+    y −0.55U（脸面外 5mm）并放宽成带（半宽 0.13U、半厚 0.05U）。
+    走向避开身体：肩段贴肩前缘（y≈−0.075），胸段在胸面前 15~25mm 悬垂。
+    """
+    U = _pony_unit()
+    chin, top = _chin_top()
+    h = top - chin
+    out = []
+    for s in (-1, 1):
+        # 外缕：太阳穴 → 颊侧 → 颌前 → 肩前外侧 → 上胸外侧，末梢 z ≈ 下巴 − 1.40h
+        # x 走到 0.95U±（≈0.10）：躯干前缘在 x 0.055-0.095 带是 y −0.10..−0.13
+        # （dimprobe2 实测），锁在 x 0.08/y −0.03 会被躯干整个吞掉（第二版锁在
+        # 肩线处消失的原因）；绕到胸大肌外侧缘前方才挂得住。
+        pts = [Vector((0.80 * U * s, -0.55 * U, chin + 0.430 * h)),
+               Vector((0.88 * U * s, -0.58 * U, chin + 0.170 * h)),
+               Vector((0.92 * U * s, -0.50 * U, chin - 0.080 * h)),
+               Vector((0.94 * U * s, -0.72 * U, chin - 0.480 * h)),
+               Vector((0.97 * U * s, -0.82 * U, chin - 0.950 * h)),
+               Vector((0.95 * U * s, -0.90 * U, chin - 1.400 * h))]
+        out.append(_strand(pts, [0.100 * U, 0.130 * U, 0.125 * U, 0.105 * U,
+                                 0.040 * U],
+                           0.050 * U, seg=8, step=0.018))
+        # 内缕：短，到下颌/颈侧（chin − 0.42h），贴颈前缘
+        pts = [Vector((0.68 * U * s, -0.52 * U, chin + 0.430 * h)),
+               Vector((0.74 * U * s, -0.54 * U, chin + 0.150 * h)),
+               Vector((0.72 * U * s, -0.44 * U, chin - 0.200 * h)),
+               Vector((0.66 * U * s, -0.30 * U, chin - 0.420 * h))]
+        out.append(_strand(pts, [0.080 * U, 0.095 * U, 0.080 * U, 0.030 * U],
+                           0.042 * U, seg=8, step=0.018))
+    return out
+
+
+def _pony_streaks():
+    """蓝挑染条 ×3：尾缘 2 条（挂马尾束两侧缘）+ 鬓外 1 条（−x 外缕伴行）。
+
+    挑染条 = 细管（半宽 0.045U、半厚 0.022U），路径取伴行发束的点列平移
+    几个毫米 —— 同一根束的「色带」，不是独立悬空的发丝。
+    第一版藏在束内（blue_streak_faces=378 但三张图全看不见），改为：
+    尾条挂束的左右缘（x ±0.19U，比主缕外缘再出 4mm），鬓条在外缕外侧
+    5~6mm（−x），末梢都比伴行缕长 2~4cm，让「挑染」从剪影里读得出来。
+    """
+    U = _pony_unit()
+    tie_z = _pony_z(_PONY_TIE_T)
+    z_sh, z_bu = cfg.SHOULDER_Z, cfg.BUST_Z + 0.009
+    z_wa = cfg.WAIST_Z
+    out = []
+    # 尾缘 ×2：挂主缕束两侧（x ±0.19U），末梢比主缕长 0.015
+    # 整合 2026-11-06：垂落段同样过 _back_clear（与 _pony_tail 同一让位口径）。
+    for s in (-1, 1):
+        pts = [Vector((0.065 * U * s, 0.74 * U, tie_z + 0.012)),
+               Vector((0.115 * U * s, 0.88 * U, z_sh + 0.012)),
+               Vector((0.160 * U * s, 1.02 * U, z_bu - 0.01)),
+               Vector((0.190 * U * s, 1.11 * U, z_wa)),
+               Vector((0.175 * U * s, 1.13 * U, z_wa - 0.075))]
+        out.append(_strand(_back_clear(pts, 0.022 * U),
+                           [0.045 * U, 0.050 * U, 0.048 * U, 0.030 * U],
+                           0.022 * U, seg=6, step=0.024))
+    # 鬓外 ×1（−x 侧）：沿外缕路径外移 6U%、前移 2U%，末梢长 5mm
+    chin, top = _chin_top()
+    h = top - chin
+    pts = [Vector((-0.86 * U, -0.57 * U, chin + 0.430 * h)),
+           Vector((-0.94 * U, -0.60 * U, chin + 0.170 * h)),
+           Vector((-0.98 * U, -0.52 * U, chin - 0.080 * h)),
+           Vector((-1.00 * U, -0.74 * U, chin - 0.480 * h)),
+           Vector((-1.03 * U, -0.84 * U, chin - 0.950 * h)),
+           Vector((-1.01 * U, -0.92 * U, chin - 1.430 * h))]
+    out.append(_strand(pts, [0.045 * U, 0.050 * U, 0.048 * U, 0.045 * U,
+                             0.028 * U],
+                       0.022 * U, seg=6, step=0.020))
+    return out
+
+
+def build_ponytail(mats):
+    """低马尾形制入口（build() 的 style=="ponytail" 分支调它）。
+
+    组成：发帽 _cap + 后脑收拢片 + 发绳小结 + 尾束 6 缕 + 长鬓发 4 缕
+    + 蓝挑染条 3 条 + 中分轻刘海两片。材质分配同 cards 分支的兜底逻辑。
+    """
+    strand_m = mats.get("hair_strand") or mats["hair"]
+    card_m = mats.get("hair_card") or mats["hair"]
+    bangs_m = mats.get("hair_bangs") or card_m
+    blue = _streak_mat()
+
+    parts = [_cap(), _pony_gather()] + _pony_ear_flaps()
+    for p in parts:
+        p.data.materials.append(strand_m)
+    tail = _pony_tail()
+    locks = _pony_locks()
+    knot = _pony_tie_knot()
+    for p in tail + locks + [knot]:
+        p.data.materials.append(strand_m)
+    streaks = _pony_streaks()
+    for p in streaks:
+        p.data.materials.append(blue)
+    fringe = _pony_fringe()
+    for p in fringe:
+        p.data.materials.append(bangs_m)
+    parts += tail + locks + [knot] + streaks + fringe
+    hair = join(parts, "Hair")
+    shade_smooth(hair)
+    if not hair.data.materials:
+        hair.data.materials.append(mats["hair"])
+    return hair
+
+
 def build(mats):
     style = charparams.get("hair.style", _DEFAULT_STYLE)
     if style == "cards":
@@ -1070,7 +1501,11 @@ def build(mats):
         # 探针脚本用的是后者，缺兜底会直接 KeyError 崩掉（2026-11-04 实测）。
         _strand = mats.get("hair_strand") or mats["hair"]
         _card = mats.get("hair_card") or mats["hair"]
-        _bangs = mats.get("hair_bangs") or _card
+        # 2026-11-06：局部名 `_bangs` 撞了模块级函数 `_bangs()`（long 分支调它）
+        # ——Python 把 `_bangs` 判为 build() 的局部变量，long 路径一进来就
+        # UnboundLocalError（回归探针 _v2_hair_regression.py 实测，cards 分支
+        # 自身不受影响）。改名 `_bangs_m`，值与行为逐位不变，long 路径恢复可回退。
+        _bangs_m = mats.get("hair_bangs") or _card
         for p in parts:
             _uv_wrap(p, _chin, _top)
             p.data.materials.append(_strand)
@@ -1079,11 +1514,14 @@ def build(mats):
             p.data.materials.append(_card)
         bangs = _cards_fringe()
         for p in bangs:
-            p.data.materials.append(_bangs)
+            p.data.materials.append(_bangs_m)
         parts += cards
         parts += bangs
     elif style == "bob":
         parts = [_cap(), _bob_shell(), _fringe()]
+    elif style == "ponytail":
+        # 低马尾形制（银发旗袍少女 v2，spec §二#1）：新分支，旧路径原样保留。
+        return build_ponytail(mats)
     else:
         parts = [_cap(), _back_sheet()]
         parts += _clumps()

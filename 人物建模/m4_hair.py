@@ -13,6 +13,7 @@ import look
 import head as headmod
 import body as bodymod
 import hair as hairmod
+import assemble
 from meshkit import dump_stats
 
 shots.reset()
@@ -34,6 +35,11 @@ b.data.materials.append(M["skin"])
 look.bind_hands(M)          # C2：Hands 接进 skin toon
 hair = hairmod.build(M)
 dump_stats(hair)
+# 2026-11-06 整合：头部锚定配饰（蝶饰×2 + 墨镜）——锚点落定单源 lib/assemble
+# （A1 蝶饰实测悬 1.4mm 不重锚；A2 墨镜重锚到发帽冠部，推导见 assemble.py）。
+acc_pieces = assemble.hair_stage(M)
+for ob in acc_pieces:
+    dump_stats(ob)
 
 # C1 描边（构造与 m3_look 完全一致，厚度按视图换算成恒定像素宽）
 OL = look.outline_mat()
@@ -47,6 +53,9 @@ for ob in (h, b, bpy.data.objects.get("Hands")):
 _ol_objs.append(hair)
 _ol_mods.append(look.add_outline_layers(
         hair, [OL, OL_CARD, look.transparent_mat()], thickness=0.008))
+for ob in assemble.closed(acc_pieces):
+    _ol_objs.append(ob)
+    _ol_mods.append(look.add_outline(ob, OL, thickness=0.008))
 
 
 # 2026-11-04：与 m5_rig 同步 —— hair card 是薄壳片，3.5px 描边会把卡片缝隙

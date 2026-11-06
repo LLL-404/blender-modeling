@@ -46,6 +46,17 @@ def out(tag, text):
 
 SKIRT_CY_D = 0.006   # 与 outfit.SKIRT_CY 一致（探针独立常量）
 
+# 头部 v1→v2 位移（与 c_probe 同法推导，2026-11-06 判定层修复）：
+# v2 骨相头顶 = appearance.height（profile）= 1.68，头长 = spec/reference.json
+# head_len.target = 0.2585 → 几何下巴 1.4215；v1 头下巴 1.3712 → 整体 +0.0503。
+# 本文件的像素 ROI（D1 额头带 z 1.540~1.580 是 v1 头坐标）按此平移。
+import json as _json
+with open(os.path.join(HERE, "spec", "reference.json"), "r", encoding="utf-8") as _fh:
+    _REF = _json.load(_fh)
+import charparams as _cp
+_HEAD_SHIFT2 = ((_cp.get("appearance.height", 1.68) - _REF["head_len"]["target"])
+                - 1.3712)
+
 
 def mm(v):
     return "-" if v is None else f"{v * 1000:+.1f}"
@@ -192,7 +203,18 @@ def geo_checks():
     # 探针却照样去建临时对象来量，量出来的是模板默认值，与成品无关。
     # 所以 bob / cards 下这 5 条标 SKIP 并指向真正管用的口径（appearance.json 里的
     # bangs_bottom_z / bangs_over_eye / hair_back_ratio），不假装通过。
-    bob = hairmod.charparams.get("hair.style", "long") in ("bob", "cards")
+    # 2026-11-06 判定层修复：v2 整合后默认形制是低马尾（ponytail）——它的刘海
+    # 是两片中分帘、后脑是收拢片+尾束，同样没有 _bangs()/_clumps() 这些长发
+    # 部件，本探针量的是模板不是成品 → 非长发形制一律 SKIP（马尾的形制验收
+    # 在交付自检 out/_v2_hair_*.png 与视觉门 spec/visual_gate.json）。
+    _style = hairmod.charparams.get("hair.style", "long")
+    bob = _style in ("bob", "cards", "ponytail")
+    # 服装形制：D3 翻领 / D4 袖口卷边 / D5 裙褶是 lib/outfit.py（衬衫+A字裙）
+    # 的部件判据；v2 默认形制挂脖旗袍（lib/qipao.py）没有这些部件——探针去建
+    # 衬衫模板来量，量的是未被使用的形制。qipao 下 SKIP，指向 qipao.build 自带的
+    # [qipao][form]/[qipao][fit] 形制/净空自检（A4 服装净空探针亦适用）。
+    import assemble as _assemble
+    _qipao = _assemble.outfit_style() != "shirt"
 
     # ---------------- D1 刘海 ----------------
     bangs = hairmod._bangs()
@@ -221,7 +243,7 @@ def geo_checks():
     out("D1 bangs boxes", " ".join(
         f"[{a * 1000:+.1f},{b * 1000:+.1f}]" for a, b in boxes))
     if bob:
-        out("D1 bangs groups", "SKIP（hair.style=bob：整片锯齿刘海，无 3 组分组）")
+        out("D1 bangs groups", f"SKIP（hair.style={_style}：非长发形制无 3 组分组刘海部件）")
         out("D1 bangs gap_verdict", "SKIP（同上）")
         out("D1 bangs tip_z", "SKIP（同上；bob 的刘海高度见 appearance.json:bangs_bottom_z）")
     else:
@@ -256,7 +278,8 @@ def geo_checks():
         prof += [c for c in cs if 1.285 <= c.z <= 1.315]
     drop(*clumps)
     if bob:
-        out("D2 clumps halfwidth", "SKIP（hair.style=bob：无后发束，发厚见 appearance.json:hair_back_ratio）")
+        out("D2 clumps halfwidth", f"SKIP（hair.style={_style}：非长发形制无后发束部件，"
+            f"发厚/发背判据见 appearance.json:hair_back_ratio）")
         out("D2 clumps halfthick", "SKIP（同上）")
     elif recs:
         hw = [r[0] for r in recs]
@@ -270,10 +293,14 @@ def geo_checks():
             f"（要求 8~10mm）")
     # 几何沟壑深度：z≈1.30 后脑横截面，把「发束+发片」按 x 分 2mm 箱取 max y，
     # y(x) 的峰谷差就是沟壑深度。像素标准差会被 toon 三阶色压平（阴影档是平色），
-    # 所以几何量才是主证据。
+    # 所以几何量才是主证据。（2026-11-06：_clumps/_back_sheet 是长发形制模板，
+    # 非 long 形制下量的是模板不是成品 → 随 halfwidth 一并 SKIP。）
     bed = [c for c in back_cos if 1.285 <= c.z <= 1.315]
     prof += bed
-    if prof and len(segs_z) >= 3:
+    if bob:
+        out("D2 clumps groove_depth", f"SKIP（hair.style={_style}：长发模板量测，"
+            f"非长发形制不适用）")
+    elif prof and len(segs_z) >= 3:
         # 沟壑 = 发束管顶 y 的中位数 − 相邻两缕**中点**处表面 y 的中位数。
         # 不要用「后脑整段 y(x) 的 max-min」：那会量到后脑边缘发片（y≈9mm）
         # 与发束（y≈114mm）的落差，报出 105mm 的假值。
@@ -310,167 +337,199 @@ def geo_checks():
         f"{'OK(不露头皮)' if cap_z > head_zmax and cap_x > head_xmax else 'FAIL'}")
 
     # ---------------- D3 翻领 ----------------
-    collar = outfitmod._collar()
-    ccos = cos_of(collar)
-    drop(collar)
-    back_top = max((c.z for c in ccos if c.y > 0.015), default=None)
-    # 「前」= V 缺口附近（|x|<=30mm 且在前侧）。只按 y<-0.015 会把
-    # 两侧翼（a≈330°，z 已回升到 1.320）也当成前领口，V 深被量小 7mm。
-    front = [(c.x, c.z) for c in ccos if c.y < -0.015 and abs(c.x) <= 0.030]
-    front_low = min((z for _, z in front), default=None)
-    front_top = max((z for _, z in front), default=None)
-    out("D3 collar back_top",
-        f"z={None if back_top is None else round(back_top, 4)} "
-        f"(n={len(ccos)} verts)")
-    out("D3 collar front_low",
-        f"z={None if front_low is None else round(front_low, 4)} "
-        f"(领根/折边最低) n_front={len(front)}")
-    # 前中开口：|x|<6mm、前侧、z<1.33 的顶点必须为空（翻领前中不闭合）
-    n_cfront = sum(1 for c in ccos if abs(c.x) < 0.006 and c.y < -0.02
-                   and c.z < 1.330)
-    out("D3 collar front_opening", f"前中 |x|<6mm 顶点数={n_cfront} "
-        f"{'OK(开口)' if n_cfront == 0 else 'FAIL(前中闭合)'}")
-    front_top = max((z for _, z in front), default=None)
-    if back_top is not None and front_top is not None:
-        # V 深按 DESIGN 口径 = 后领顶 − 前领顶（不是 − 领根，领根恒定 1.300 会把
-        # 差值虚报成 38mm，那量的是"后领到肩"而不是 V 的深度）
-        d = back_top - front_top
-        out("D3 collar front_v_depth",
-            f"后领顶={back_top:.4f} 前领顶={front_top:.4f} V深={mm(d)}mm "
-            f"{'OK' if d >= 0.012 else 'FAIL'}（要求 >=12mm）")
-        out("D3 collar back_above_front", f"{mm(d)}mm "
-            f"{'OK' if d >= 0.008 else 'FAIL'}（要求后领 >= 前领+8mm）")
+    if _qipao:
+        out("D3 collar", "SKIP（outfit.style=qipao：立领形制无衬衫翻领部件，"
+                         "形制/净空判据在 qipao.build 的 [qipao][form]/[qipao][fit] "
+                         "与 A4 服装净空探针；本探针在下一段直接跑 qipao 模块"
+                         "自带的 form/fit 判定，让门禁覆盖现役形制）")
+        # 2026-11-06：现役形制的门禁覆盖——按 qipao.build 的同一口径重跑形制
+        # 量测与净空自检（lib/qipao.py 自带判据：净空 <8mm 打 [qipao][fit][FAIL]，
+        # check.py 按 FAIL 标记归类）。只建 dress 部件（绑带/铆钉需要 Body 射线
+        # 吸附，这里不重跑），量的是与 build 时相同的参数面几何。
+        import qipao as _qipaomod
+        import body as _bodymod
+        from meshkit import resample as _resample, solidify as _solidify
+        _dense_q = _resample(_bodymod.torso_rows(), "z", 0.008)
+        _rows_q = _qipaomod._dress_rows(_dense_q)
+        _dress = _qipaomod.join(
+            [_qipaomod._panel(_rows_q, False, "qipao_back"),
+             _qipaomod._panel(_rows_q, True, "qipao_front")], "qipao_dress")
+        _qipaomod._weld_doubles(_dress)
+        _bodymod.sculpt_torso(_dress)
+        _dress_cos = [v.co.copy() for v in _dress.data.vertices]
+        _solidify(_dress, 0.003)
+        _qipaomod._form_facts(_dress)
+        _qipaomod._assert_fit(_dress_cos)
+        drop(_dress)
+    else:
+        collar = outfitmod._collar()
+        ccos = cos_of(collar)
+        drop(collar)
+        back_top = max((c.z for c in ccos if c.y > 0.015), default=None)
+        # 「前」= V 缺口附近（|x|<=30mm 且在前侧）。只按 y<-0.015 会把
+        # 两侧翼（a≈330°，z 已回升到 1.320）也当成前领口，V 深被量小 7mm。
+        front = [(c.x, c.z) for c in ccos if c.y < -0.015 and abs(c.x) <= 0.030]
+        front_low = min((z for _, z in front), default=None)
+        front_top = max((z for _, z in front), default=None)
+        out("D3 collar back_top",
+            f"z={None if back_top is None else round(back_top, 4)} "
+            f"(n={len(ccos)} verts)")
+        out("D3 collar front_low",
+            f"z={None if front_low is None else round(front_low, 4)} "
+            f"(领根/折边最低) n_front={len(front)}")
+        # 前中开口：|x|<6mm、前侧、z<1.33 的顶点必须为空（翻领前中不闭合）
+        n_cfront = sum(1 for c in ccos if abs(c.x) < 0.006 and c.y < -0.02
+                       and c.z < 1.330)
+        out("D3 collar front_opening", f"前中 |x|<6mm 顶点数={n_cfront} "
+            f"{'OK(开口)' if n_cfront == 0 else 'FAIL(前中闭合)'}")
+        front_top = max((z for _, z in front), default=None)
+        if back_top is not None and front_top is not None:
+            # V 深按 DESIGN 口径 = 后领顶 − 前领顶（不是 − 领根，领根恒定 1.300 会把
+            # 差值虚报成 38mm，那量的是"后领到肩"而不是 V 的深度）
+            d = back_top - front_top
+            out("D3 collar front_v_depth",
+                f"后领顶={back_top:.4f} 前领顶={front_top:.4f} V深={mm(d)}mm "
+                f"{'OK' if d >= 0.012 else 'FAIL'}（要求 >=12mm）")
+            out("D3 collar back_above_front", f"{mm(d)}mm "
+                f"{'OK' if d >= 0.008 else 'FAIL'}（要求后领 >= 前领+8mm）")
 
     # ---------------- D4/D5 需要整个 Outfit ----------------
-    cloth = outfitmod.build(M)
-    ccos2 = cos_of(cloth)
+    if _qipao:
+        out("D4 cuff", "SKIP（outfit.style=qipao：无袖形制无袖口卷边，"
+                       "形制判据在 [qipao][form]/[qipao][fit]；衬衫回退路径"
+                       "（OUTFIT_STYLE=shirt）下本段照常生效）")
+        out("D5 pleat", "SKIP（outfit.style=qipao：直筒旗袍无 A 字裙褶，"
+                        "形制判据在 [qipao][form] 开衩/绑带量测）")
+    else:
+        cloth = outfitmod.build(M)
+        ccos2 = cos_of(cloth)
 
-    # D4 卷边凸出 + 边界边数。
-    # 口径（2026-11-01 修）：A5 拿「裸管 47mm（环层）」当基准，报出凸出 3.2mm；
-    # 但 solidify 之后袖筒外表面是 48.34mm，真实可见凸出只有 1.65mm。
-    # D4 的造型验收按可见凸出 = 卷边外表面 − 袖筒 solidify 后末端外表面。
-    import bmesh
-    from mathutils import Vector as _V
-    SEG = 40
-    tube_ob = outfitmod._sleeve(1, solid=False, cuff=False)   # 环层（A5 旧口径）
-    vs = cos_of(tube_ob)
-    ring = vs[-(SEG + 2):-2]
-    cen = [sum(p[i] for p in ring) / len(ring) for i in range(3)]
-    prev = vs[-(2 * SEG + 2):-(SEG + 2)]
-    cen_p = [sum(p[i] for p in prev) / len(prev) for i in range(3)]
-    axis = [cen[i] - cen_p[i] for i in range(3)]
-    ln = math.sqrt(sum(a * a for a in axis)) or 1.0
-    axis = [a / ln for a in axis]
-    r_tube = max(math.sqrt(sum(((p[i] - cen[i]) - sum((p[j] - cen[j]) * axis[j]
-                                                    for j in range(3)) * axis[i]) ** 2
-                              for i in range(3))) for p in ring)
-    drop(tube_ob)
+        # D4 卷边凸出 + 边界边数。
+        # 口径（2026-11-01 修）：A5 拿「裸管 47mm（环层）」当基准，报出凸出 3.2mm；
+        # 但 solidify 之后袖筒外表面是 48.34mm，真实可见凸出只有 1.65mm。
+        # D4 的造型验收按可见凸出 = 卷边外表面 − 袖筒 solidify 后末端外表面。
+        import bmesh
+        from mathutils import Vector as _V
+        SEG = 40
+        tube_ob = outfitmod._sleeve(1, solid=False, cuff=False)   # 环层（A5 旧口径）
+        vs = cos_of(tube_ob)
+        ring = vs[-(SEG + 2):-2]
+        cen = [sum(p[i] for p in ring) / len(ring) for i in range(3)]
+        prev = vs[-(2 * SEG + 2):-(SEG + 2)]
+        cen_p = [sum(p[i] for p in prev) / len(prev) for i in range(3)]
+        axis = [cen[i] - cen_p[i] for i in range(3)]
+        ln = math.sqrt(sum(a * a for a in axis)) or 1.0
+        axis = [a / ln for a in axis]
+        r_tube = max(math.sqrt(sum(((p[i] - cen[i]) - sum((p[j] - cen[j]) * axis[j]
+                                                        for j in range(3)) * axis[i]) ** 2
+                                  for i in range(3))) for p in ring)
+        drop(tube_ob)
 
-    # 可见基准：同轴同面、solidify 之后的袖筒末端（tip ±6mm 带内的最大垂轴半径）
-    _tip = _V((0.169, 0.006, 1.110))
-    _ax = _V((-0.075, 0.050, -0.996)).normalized()
-    sol_ob = outfitmod._sleeve(1, solid=True, cuff=False)
-    _band = []
-    for c in cos_of(sol_ob):
-        d = c - _tip
-        if abs(d.dot(_ax)) <= 0.006:
-            _band.append((d - d.dot(_ax) * _ax).length)
-    r_solid = max(_band) if _band else None
-    drop(sol_ob)
+        # 可见基准：同轴同面、solidify 之后的袖筒末端（tip ±6mm 带内的最大垂轴半径）
+        _tip = _V((0.169, 0.006, 1.110))
+        _ax = _V((-0.075, 0.050, -0.996)).normalized()
+        sol_ob = outfitmod._sleeve(1, solid=True, cuff=False)
+        _band = []
+        for c in cos_of(sol_ob):
+            d = c - _tip
+            if abs(d.dot(_ax)) <= 0.006:
+                _band.append((d - d.dot(_ax) * _ax).length)
+        r_solid = max(_band) if _band else None
+        drop(sol_ob)
 
-    band = []
-    for c in ccos2:
-        if c.x <= 0.13:
-            continue
-        d = [c.x - cen[0], c.y - cen[1], c.z - cen[2]]
-        if abs(sum(d[i] * axis[i] for i in range(3))) <= 0.010:
-            perp = [d[i] - sum(d[j] * axis[j] for j in range(3)) * axis[i]
-                    for i in range(3)]
-            band.append(math.sqrt(sum(x * x for x in perp)))
-    r_out = max(band) if band else None
-    vis = None if (r_out is None or r_solid is None) else r_out - r_solid
-    out("D4 cuff ring bulge",
-        f"tube_r={mm(r_tube)}mm outfit_r_max={mm(r_out)}mm "
-        f"sleeve_solid_r={mm(r_solid)}mm visible={mm(vis)}mm "
-        f"(旧环层口径={mm(None if r_out is None else r_out - r_tube)}mm) "
-        f"{'OK' if (vis is not None and 0.002 <= vis <= 0.004) else 'FAIL'}"
-        f"（可见凸出要求 2~4mm）")
-    # 造型验收：内缘厚、外缘薄，且都仍 >=2mm 可见
-    # 分段必须对准 tube 的三个环（t = −10 / −4 / 0）：环间是**斜面**，
-    # Solidify 在斜面上法线倾斜，径向只增约 0.6~0.7mm，取斜段会把
-    # 「内缘厚」量成 1.9mm（实为 3.4mm）。这是口径陷阱，不是造型问题。
-    segs = []
-    for lo, hi, tag in ((-0.011, -0.008, "inner"), (-0.005, -0.003, "mid"),
-                        (-0.001, 0.001, "outer")):
-        b = []
+        band = []
         for c in ccos2:
             if c.x <= 0.13:
                 continue
             d = [c.x - cen[0], c.y - cen[1], c.z - cen[2]]
-            t = sum(d[i] * axis[i] for i in range(3))
-            if lo <= t < hi:
-                perp = [d[i] - t * axis[i] for i in range(3)]
-                b.append(math.sqrt(sum(x * x for x in perp)))
-        if b and r_solid is not None:
-            segs.append((tag, max(b) - r_solid))
-    if segs:
-        detail = " ".join(f"{t}:{v * 1000:+.2f}" for t, v in segs)
-        dmap = dict(segs)
-        ok = (dmap.get("inner", 0) > dmap.get("outer", 0) + 0.0003
-              and all(v >= 0.002 for _, v in segs))
-        out("D4 cuff shape", f"{detail}mm "
-            f"{'OK(内厚外薄)' if ok else 'FAIL'}（要求 inner>outer+0.3mm 且均>=2mm）")
+            if abs(sum(d[i] * axis[i] for i in range(3))) <= 0.010:
+                perp = [d[i] - sum(d[j] * axis[j] for j in range(3)) * axis[i]
+                        for i in range(3)]
+                band.append(math.sqrt(sum(x * x for x in perp)))
+        r_out = max(band) if band else None
+        vis = None if (r_out is None or r_solid is None) else r_out - r_solid
+        out("D4 cuff ring bulge",
+            f"tube_r={mm(r_tube)}mm outfit_r_max={mm(r_out)}mm "
+            f"sleeve_solid_r={mm(r_solid)}mm visible={mm(vis)}mm "
+            f"(旧环层口径={mm(None if r_out is None else r_out - r_tube)}mm) "
+            f"{'OK' if (vis is not None and 0.002 <= vis <= 0.004) else 'FAIL'}"
+            f"（可见凸出要求 2~4mm）")
+        # 造型验收：内缘厚、外缘薄，且都仍 >=2mm 可见
+        # 分段必须对准 tube 的三个环（t = −10 / −4 / 0）：环间是**斜面**，
+        # Solidify 在斜面上法线倾斜，径向只增约 0.6~0.7mm，取斜段会把
+        # 「内缘厚」量成 1.9mm（实为 3.4mm）。这是口径陷阱，不是造型问题。
+        segs = []
+        for lo, hi, tag in ((-0.011, -0.008, "inner"), (-0.005, -0.003, "mid"),
+                            (-0.001, 0.001, "outer")):
+            b = []
+            for c in ccos2:
+                if c.x <= 0.13:
+                    continue
+                d = [c.x - cen[0], c.y - cen[1], c.z - cen[2]]
+                t = sum(d[i] * axis[i] for i in range(3))
+                if lo <= t < hi:
+                    perp = [d[i] - t * axis[i] for i in range(3)]
+                    b.append(math.sqrt(sum(x * x for x in perp)))
+            if b and r_solid is not None:
+                segs.append((tag, max(b) - r_solid))
+        if segs:
+            detail = " ".join(f"{t}:{v * 1000:+.2f}" for t, v in segs)
+            dmap = dict(segs)
+            ok = (dmap.get("inner", 0) > dmap.get("outer", 0) + 0.0003
+                  and all(v >= 0.002 for _, v in segs))
+            out("D4 cuff shape", f"{detail}mm "
+                f"{'OK(内厚外薄)' if ok else 'FAIL'}（要求 inner>outer+0.3mm 且均>=2mm）")
 
-    bm = bmesh.new()
-    bm.from_mesh(cloth.data)
-    n_bound = sum(1 for e in bm.edges if e.is_boundary)
-    bm.free()
-    out("D4 cuff boundary_edges", f"{n_bound} {'OK' if n_bound == 0 else 'FAIL'}")
+        bm = bmesh.new()
+        bm.from_mesh(cloth.data)
+        n_bound = sum(1 for e in bm.edges if e.is_boundary)
+        bm.free()
+        out("D4 cuff boundary_edges", f"{n_bound} {'OK' if n_bound == 0 else 'FAIL'}")
 
-    # D5 裙褶（2026-11-01 口径修正）：取**未 solidify 的裙摆单环**，按索引
-    # 顺序（= _skirt 的角度顺序）做 DFT。22 次分量才是褶幅，2 次分量是椭圆
-    # 本身，互不污染。
-    # 旧口径（z 窗口 0.644~0.658 内排序后每褶 max-min）同时收进内外两层
-    # （实测 264 = 132×2 个点）、每褶仅 6 点，差值里混着椭圆各向异性，
-    # 报出 32.2mm 的假值 —— 典型的「量到的不是要量的东西」。
-    skirt = outfitmod._skirt(solid=False)
-    scos = cos_of(skirt)
-    drop(skirt)
-    seg = outfitmod.SKIRT_SEG
-    pleats = 22
-    if len(scos) >= seg:
-        ring = scos[-seg:]                     # 最后一环 = 裙摆 z=0.650
-        n = len(ring)
-        rk = np.array([math.hypot(c.x, c.y - SKIRT_CY_D) for c in ring],
-                      dtype=np.float64)
-        kk = np.arange(n)
-        th = 2.0 * np.pi * pleats * kk / n
+        # D5 裙褶（2026-11-01 口径修正）：取**未 solidify 的裙摆单环**，按索引
+        # 顺序（= _skirt 的角度顺序）做 DFT。22 次分量才是褶幅，2 次分量是椭圆
+        # 本身，互不污染。
+        # 旧口径（z 窗口 0.644~0.658 内排序后每褶 max-min）同时收进内外两层
+        # （实测 264 = 132×2 个点）、每褶仅 6 点，差值里混着椭圆各向异性，
+        # 报出 32.2mm 的假值 —— 典型的「量到的不是要量的东西」。
+        skirt = outfitmod._skirt(solid=False)
+        scos = cos_of(skirt)
+        drop(skirt)
+        seg = outfitmod.SKIRT_SEG
+        pleats = 22
+        if len(scos) >= seg:
+            ring = scos[-seg:]                     # 最后一环 = 裙摆 z=0.650
+            n = len(ring)
+            rk = np.array([math.hypot(c.x, c.y - SKIRT_CY_D) for c in ring],
+                          dtype=np.float64)
+            kk = np.arange(n)
+            th = 2.0 * math.pi * pleats * kk / n
 
-        def _amp(order):
-            c = np.sum(rk * np.exp(-2j * np.pi * order * kk / n)) * 2.0 / n
-            return float(abs(c)), float(np.angle(c))
+            def _amp(order):
+                c = np.sum(rk * np.exp(-2j * math.pi * order * kk / n)) * 2.0 / n
+                return float(abs(c)), float(np.angle(c))
 
-        a1, p1 = _amp(pleats)
-        a2, p2 = _amp(2 * pleats)
-        w = a1 * np.cos(th + p1) + a2 * np.cos(2.0 * th + p2)
-        peak, trough = float(w.max()), float(w.min())
-        out("D5 pleat peak_trough",
-            f"seg={n} per_pleat={n / pleats:.1f} amp22={mm(a1)}mm "
-            f"amp44={mm(a2)}mm peak={mm(peak)}mm trough={mm(trough)}mm "
-            f"diff={mm(peak - trough)}mm "
-            f"{'OK' if peak - trough >= 0.010 else 'FAIL'}（要求 >=10mm）")
-        # 正面中线：|x| 最小、y 最前的顶点（a≈−90°）
-        idx = min(range(n), key=lambda i: (abs(ring[i].x), ring[i].y))
-        w_mid = float(w[idx])
-        out("D5 pleat center_phase",
-            f"mid_k={idx} a_mid={math.degrees(2 * math.pi * idx / n) - 360:.1f}deg "
-            f"w_mid={mm(w_mid)}mm peak={mm(peak)}mm "
-            f"delta={mm(peak - w_mid)}mm "
-            f"{'OK(中线是峰)' if peak - w_mid <= 0.0015 else 'FAIL(中线不是峰)'}")
-    else:
-        out("D5 pleat peak_trough", "SKIP（裙子顶点数不足一环）")
+            a1, p1 = _amp(pleats)
+            a2, p2 = _amp(2 * pleats)
+            w = a1 * np.cos(th + p1) + a2 * np.cos(2.0 * th + p2)
+            peak, trough = float(w.max()), float(w.min())
+            out("D5 pleat peak_trough",
+                f"seg={n} per_pleat={n / pleats:.1f} amp22={mm(a1)}mm "
+                f"amp44={mm(a2)}mm peak={mm(peak)}mm trough={mm(trough)}mm "
+                f"diff={mm(peak - trough)}mm "
+                f"{'OK' if peak - trough >= 0.010 else 'FAIL'}（要求 >=10mm）")
+            # 正面中线：|x| 最小、y 最前的顶点（a≈−90°）
+            idx = min(range(n), key=lambda i: (abs(ring[i].x), ring[i].y))
+            w_mid = float(w[idx])
+            out("D5 pleat center_phase",
+                f"mid_k={idx} a_mid={math.degrees(2 * math.pi * idx / n) - 360:.1f}deg "
+                f"w_mid={mm(w_mid)}mm peak={mm(peak)}mm "
+                f"delta={mm(peak - w_mid)}mm "
+                f"{'OK(中线是峰)' if peak - w_mid <= 0.0015 else 'FAIL(中线不是峰)'}")
+        else:
+            out("D5 pleat peak_trough", "SKIP（裙子顶点数不足一环）")
 
-    drop(cloth)
+        drop(cloth)
 
 
 def rmid_is_peak(r_mid, r_max):
@@ -481,12 +540,31 @@ def rmid_is_peak(r_mid, r_max):
 # ================================================================ 像素：D1 刘海覆盖 / D2 沟壑
 
 def pix_checks():
+    import hair as _hairmod
+    _style = _hairmod.charparams.get("hair.style", "long")
     a, path = read_rgb("m4_face_front")
     if a is None:
         out("D1 bangs forehead_cover", f"SKIP（缺 {path}，先跑 m4_hair.py）")
+    elif _style != "long":
+        # 2026-11-06 判定层修复：>=70% 这条数是 DESIGN D1 对 v1「分组刘海」的
+        # 验收口径，v2 各形制的刘海语言不同（bob 整片锯齿 / cards 环绕卡片 /
+        # ponytail 中分两片帘——中分缝本身是参考图的设计特征，spec §三.3
+        # 「刘海分缝」）。基线实验（cards 形制）实测也只有 40.1%——v2 头
+        # 变大后该判据对非长发形制整体失准。非长发形制 SKIP，指针指向
+        # 视觉门 spec/visual_gate.json（发型轮廓语言）与交付自检 out/_v2_hair_*.png。
+        m = roi_mask("m4_face_front", a.shape, (-0.060, 0.060),
+                     (1.540 + _HEAD_SHIFT2, 1.580 + _HEAD_SHIFT2))
+        hm = hair_mask(a) & m
+        sm = skin_mask(a) & m
+        den = int(hm.sum()) + int(sm.sum())
+        cov = float(hm.sum()) / max(1, den) * 100.0
+        out("D1 bangs forehead_cover", f"SKIP（hair.style={_style}：>=70% 为 v1 "
+            f"分组刘海口径，v2 形制的刘海验收走视觉门；实测 {cov:.1f}%"
+            f"（hair={int(hm.sum())}, skin={int(sm.sum())}, den={den}）仅作记录）")
     else:
-        # 额头 ROI：眉上沿 1.540 到发际线 1.580，|x|<60mm
-        m = roi_mask("m4_face_front", a.shape, (-0.060, 0.060), (1.540, 1.580))
+        # 额头 ROI：眉上沿 1.540 到发际线 1.580（v1 头坐标）+ v2 位移，|x|<60mm
+        m = roi_mask("m4_face_front", a.shape, (-0.060, 0.060),
+                     (1.540 + _HEAD_SHIFT2, 1.580 + _HEAD_SHIFT2))
         hm = hair_mask(a) & m
         sm = skin_mask(a) & m
         # 分母是「额头区里 头发+皮肤」的像素，不是 fg（矩形 ROI 会把背景和

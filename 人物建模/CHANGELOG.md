@@ -1,5 +1,19 @@
 # 变更记录
 
+## 2026-11-06 / v0.21.0 — v2 角色重建：银发旗袍少女 · 6.5 头身
+
+由重建工作流（`dwf_run` 01d6cb05，08:20 → 02:41，1.03 亿 token）交付，本轮只做入库收尾。
+设定源 `spec/角色设定-银发旗袍-v1.md`（BOSS 五节 brief 原文）＋参考图 `spec/reference/概念图-银发旗袍-v1.png`。
+
+- **换靶**：`spec/reference.json` 改 6.5 头身 / 168cm / 头长 0.2585；旧参数冻结为 `spec/reference-v1-修长7.5.json`、`params/profile-v1-修长7.5.json`
+- **形体**：`cfg.py` + `lib/body.py` 重排躯干截面表（腰 0.131 / 髋 0.183 / 肩承载靠三角肌 0.202），裆高 0.752 → 0.6972，骨盆段拉长 63mm；表值按 voxel+smooth 带内经验因子反推（腰带 ≈1.034、胯带 ≈0.984，`_probe/body_ratio_probe.py` 实测）
+- **头发**：`lib/hair.py` +442 行 —— 低马尾（收拢片 / 扎点锥 / 发绳结 / 尾段 / 侧锁 / 蓝挑染 `_streak_mat`）+ 耳侧碎发，与后领净空 `_back_clear`
+- **服装**：新增 `lib/qipao.py`（516 行：立领挂脖、双侧超高开衩 + 棕色包边管、3 组侧绑带 + 金铆钉、直筒微收腰 `_relax`）、`lib/accessories.py`（714 行：蝶饰 / 墨镜 / 水滴吊坠 / 雪纺飘袖）、`lib/assemble.py`（123 行：装配入口 `build_outfit` / `hair_stage` / `full_stage`）
+- **探针扩展**：`_stageB/b_probe.py`、`_stageC/c_probe.py`、`_stageD/d_probe.py`（+400 行，发型服装细节）；`scripts/visual_gate.py` 支持中性亮色分割、换靶基线
+- **实测**：`build.py measure` 全 PASS；`build.py all` 跑通；`check.py` **68 PASS / 4 FAIL / 0 HOLE**；`visual_gate.py` **FAIL**（头发明暗层次 0.1451 < 0.2965）
+- **人眼四级阶梯未过**（下层不过上层不算过），差距清单 6 条如实入库：祥云白纹缺失、蝶饰位置/体量错（读作耳侧小簇）、绑带 3 组读作 2 簇、旗袍侧影平直无收腰、盘扣读作金黑虫形、飘袖近不透明
+- 未覆盖：三渲二材质规范（C 阶段）、雪纺半透明、祥云法线贴图、布线要求（D 阶段）、M6 资产化链未重跑、角色命名
+
 ## 2026-11-05 / v0.20.6 — 硬规则：改模型前先过一遍 Blender 技术手册
 
 BOSS 定规矩。落地成**机器闸门**，不是文档口号。

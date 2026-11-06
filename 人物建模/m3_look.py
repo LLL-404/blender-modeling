@@ -13,7 +13,7 @@ import look
 import head as headmod
 import body as bodymod
 import hair as hairmod
-import outfit as outfitmod
+import assemble
 from meshkit import dump_stats
 
 shots.reset()
@@ -41,7 +41,9 @@ look.bind_hands(M)
 # 深色底上 rim 亮带才有对比度（白衬衫/皮肤已在 light 档 227，加不亮）。所以 m3 这个
 # 入口必须把 Hair / Outfit 也建出来 —— 之前它只有 Head+Body。
 hair = hairmod.build(M)
-cloth = outfitmod.build(M)
+# 2026-11-06 整合：形制分发单源 lib/assemble（profile outfit.style，env 可覆写），
+# 与 m4/m5/m5_rig 同一口径；本入口仍是着色验收，不挂配饰。
+cloth = assemble.build_outfit(M)
 dump_stats(hair)
 dump_stats(cloth)
 

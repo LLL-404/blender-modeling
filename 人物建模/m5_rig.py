@@ -14,7 +14,7 @@ import rig
 import head as headmod
 import body as bodymod
 import hair as hairmod
-import outfit as outfitmod
+import assemble
 from meshkit import dump_stats
 
 shots.reset()
@@ -40,7 +40,13 @@ b = bodymod.build()
 look.bind_hands(M)
 b.data.materials.append(M["skin"])
 hair = hairmod.build(M)
-cloth = outfitmod.build(M)
+cloth = assemble.build_outfit(M)
+# 2026-11-06 整合：全套配饰+飘袖（形制/锚点单源 lib/assemble）。绑定在骨架
+# 建好后（bind_rigid）；飘袖绑同侧 upper_arm 刚性——袖身辅助骨骼是 brief §三.2
+# 的 B 阶段项未建，walk/reach 下袖子随大臂整体摆，属本轮已知取舍。
+acc_pieces = assemble.full_stage(M)
+for ob in acc_pieces:
+    dump_stats(ob)
 
 # C1 描边：五个网格各挂一层反法线外壳（黑 Emission + backface culling）。
 # 厚度按「视图恒定像素宽」换算，见 look.set_outline_px 的说明。
@@ -65,6 +71,9 @@ if hair is not None:
     _ol_objs.append(hair)
     _ol_mods.append(look.add_outline_layers(
         hair, [OL, OL_CARD, look.transparent_mat()], thickness=0.008))
+for ob in assemble.closed(acc_pieces):
+    _ol_objs.append(ob)
+    _ol_mods.append(look.add_outline(ob, OL, thickness=0.008))
 
 
 def _set_outline(ortho, res_y):
@@ -77,6 +86,7 @@ arm = rig.build_armature()
 # B3：Hands 自带 13 组顶点组，挂骨架即可（不重算权重）
 hands = bpy.data.objects.get("Hands")
 rig.bind_all(b, cloth, h, hair, hands, arm, side_lock=True)
+assemble.bind_rigid(acc_pieces, arm)   # 配饰/飘袖上骨架（刚性，见上方注释）
 
 for o in (b, cloth, h, hair, hands):
     if o is not None:

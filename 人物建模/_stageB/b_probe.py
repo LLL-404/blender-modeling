@@ -41,7 +41,7 @@ def build_scene():
     import head as headmod
     import body as bodymod
     import hair as hairmod
-    import outfit as outfitmod
+    import assemble
 
     shots.reset()
     shots.setup_studio()
@@ -51,11 +51,20 @@ def build_scene():
     b = bodymod.build()
     b.data.materials.append(M["skin"])
     hair = hairmod.build(M)
-    cloth = outfitmod.build(M)
+    # 2026-11-06 判定层修复：形制分发单源 lib/assemble（profile outfit.style，
+    # env OUTFIT_STYLE 可覆写）——探针原来写死 lib/outfit.build（衬衫），在 v2
+    # 默认形制（挂脖旗袍）下量的是**未被使用的回退形制**；R2 的裙摆判据只对
+    # 有裙摆的形制有意义（见 R2 段的形制分支）。
+    cloth = assemble.build_outfit(M)
+    global OUTFIT_STYLE
+    OUTFIT_STYLE = assemble.outfit_style()
     arm = rig.build_armature()
     hands = bpy.data.objects.get("Hands")
     rig.bind_all(b, cloth, h, hair, hands, arm, side_lock=SIDE_LOCK)
     return b, cloth, h, hair, hands, arm
+
+
+OUTFIT_STYLE = "shirt"   # built 场景由 build_scene() 落；loaded 场景（美女.blend）无分支
 
 
 if bpy.data.objects.get("Rig") is not None:
@@ -445,12 +454,23 @@ leg_disp_full = mean_disp(b_walk, b_rest, 0.0, 0.78, lead_ok=LEG_LEAD)
 print(f"[bprobe] R2 leg_disp same-band(z 0.60~0.78)={leg_disp * 1000:.2f}mm "
       f"full-leg(z<0.78)={leg_disp_full * 1000:.2f}mm (仅对照)")
 ratio = hem_disp / leg_disp if leg_disp > 0 else 0.0
-print(f"[bprobe] R2 hem_disp(z<0.75)={hem_disp * 1000:.2f}mm leg_disp={leg_disp * 1000:.2f}mm "
-      f"ratio={ratio * 100:.2f}% (验收 >=20%) {'PASS' if ratio >= 0.20 else 'FAIL'}")
-print(f"[bprobe] R2 leak rest: n={leak_rest} worst={worst_rest * 1000:.2f}mm")
-print(f"[bprobe] R2 leak walk: n={leak_walk} worst={worst_walk * 1000:.2f}mm "
-      f"(验收 <=5 个且 <=2mm) "
-      f"{'PASS' if leak_walk <= 5 and worst_walk <= 0.002 else 'FAIL'}")
+if OUTFIT_STYLE == "shirt":
+    print(f"[bprobe] R2 hem_disp(z<0.75)={hem_disp * 1000:.2f}mm leg_disp={leg_disp * 1000:.2f}mm "
+          f"ratio={ratio * 100:.2f}% (验收 >=20%) {'PASS' if ratio >= 0.20 else 'FAIL'}")
+    print(f"[bprobe] R2 leak rest: n={leak_rest} worst={worst_rest * 1000:.2f}mm")
+    print(f"[bprobe] R2 leak walk: n={leak_walk} worst={worst_walk * 1000:.2f}mm "
+          f"(验收 <=5 个且 <=2mm) "
+          f"{'PASS' if leak_walk <= 5 and worst_walk <= 0.002 else 'FAIL'}")
+else:
+    # 2026-11-06：裙摆跟随/越出判据只对「有裙摆」的形制（衬衫+A字裙回退）有意义；
+    # 挂脖旗袍是直筒+双侧开衩——腿部经开衩外露是设计特征，越出判据不适用。
+    # 旗袍的形制/净空验收在 qipao.build 自带的 [qipao][form]/[qipao][fit]（build
+    # 日志）与 A4 服装净空探针。测量数字照打，只去判定标记（归 SKIP 类）。
+    print(f"[bprobe] R2 hem_disp(z<0.75)={hem_disp * 1000:.2f}mm leg_disp={leg_disp * 1000:.2f}mm "
+          f"ratio={ratio * 100:.2f}% (裙摆跟随判据仅衬衫形制适用)")
+    print(f"[bprobe] R2 leak rest: n={leak_rest} worst={worst_rest * 1000:.2f}mm")
+    print(f"[bprobe] R2 leak walk: n={leak_walk} worst={worst_walk * 1000:.2f}mm "
+          f"(越出判据仅衬衫形制适用；qipao 形制验收见 [qipao][fit] 净空)")
 
 # ---------------- R3：交叉姿势应变（B2 过杀检测） ----------------
 

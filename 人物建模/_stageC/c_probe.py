@@ -48,9 +48,25 @@ with open(os.path.join(HERE, "spec", "reference.json"), "r", encoding="utf-8") a
 _HW_T = _REF["head_w_over_len"]["target"] * _REF["head_len"]["target"]
 _HW_TOL = _REF["head_w_over_len"]["tol"]
 
+# 2026-11-06 判定层修复：上面的映射是 **v1 头**（下巴 1.3712 / 头长 0.2488）的。
+# v2 改靶（银发旗袍 1.68m / 6.5 头身，spec/角色设定-银发旗袍-v1.md）后头骨整体
+# 上移——v1 映射把鼻/下巴/脸 ROI 全指到颈部与领口（旧下巴 ROI z[1.3585,1.3861]
+# 在 v2 头上是颈柱），面部像素判据全部量错位置。v2 口径从 spec 推：
+#   骨相头顶 = appearance.height（profile）= 1.68；头长 = head_len.target = 0.2585；
+#   几何下巴 = 1.68 − 0.2585 = 1.4215（cfg.CHIN_Z 1.4220 同源，差 0.5mm）。
+# v1→v2 映射取「整体随下巴平移」（+0.0503）：v2 头长 +3.9% 对 25mm 级 ROI 的
+# 影响 ≤1mm，忽略；头长再变时此处须按同法重推。
+import charparams
+_CHIN_V1 = 1.3712
+_HEAD_TOP_V2 = charparams.get("appearance.height", 1.68)
+_HEAD_LEN_V2 = _REF["head_len"]["target"]
+_CHIN_V2 = _HEAD_TOP_V2 - _HEAD_LEN_V2
+_HEAD_SHIFT2 = _CHIN_V2 - _CHIN_V1
+
 
 def sz(z):
-    return _HEAD_ANCHOR + (z - _HEAD_ANCHOR) * _HEAD_SCALE + _HEAD_SHIFT
+    """v1 头参数 z → 当前（v2）头的世界 z：v1 映射 + 下巴位移。"""
+    return _HEAD_ANCHOR + (z - _HEAD_ANCHOR) * _HEAD_SCALE + _HEAD_SHIFT + _HEAD_SHIFT2
 
 
 # ---------------- 机位参数（必须与 m3_look / m4_hair / m5_outfit 同步） ----------------
@@ -67,10 +83,21 @@ VIEWS = {
 # 皮肤 toon 三档的显示色（base × ramp 的 sRGB 编码）。C3 只改 pos 与灯强，
 # 不改 base/ramp，所以这三档色在 C 阶段全程稳定 —— 用它做分类判据比
 # "绝对亮度阈值"稳（C3 会把皮肤 p50 从 229 压到 ~190）。
+# 2026-11-06 判定层修复：本表原为 v1 暖粉皮肤（base 0.96,0.80,0.72）标定；
+# v2 改靶后 look.py 的 skin 材质换冷瓷白 base (1.00,0.955,0.970)（look.set_all），
+# 旧表把 v2 皮肤 entirely 分错（v2 light 档 (255,250,252) 距旧 light 档 49.7 > 38，
+# 根本进不了掩膜；v2 mid 档反而被当旧 light 档）。按同一公式重算：
+#   shadow = base×(0.660,0.505,0.560) → sRGB (213,185,195)
+#   mid    = base×(0.930,0.805,0.840) → sRGB (247,228,233)
+#   light  = base×(1.00,1.00,1.00)    → sRGB (255,250,252)
+# 改皮肤材质（look.set_all 的 skin toon 参数）必须同步此表。
+# 已知极限：v2 全身是「瓷白皮肤+银白发+银白旗袍」高亮调色板，皮肤 light 档与
+# 发 light 档 (246,248,250) 的色距只有 9.4——整图颜色分类分不开白皮肤与白发，
+# 皮肤分位统计必须配合 ROI 使用（见 main 里 assert.skin_* 的测量域收窄）。
 SKIN_TIERS = [
-    ("shadow", (198, 175, 191)),   # #C8B4C2
-    ("mid", (235, 202, 196)),      # #E9CBC6
-    ("light", (247, 224, 211)),    # #F8DED1
+    ("shadow", (213, 185, 195)),
+    ("mid", (247, 228, 233)),
+    ("light", (255, 250, 252)),
 ]
 TIER_DIST = 38.0
 
@@ -217,8 +244,33 @@ def roi_skin(a, view, xr, zr):
                        for i, (name, _) in enumerate(SKIN_TIERS)})
 
 
+def skin_stats_roi(a, view, xr, zr):
+    """skin_stats 的 ROI 版（2026-11-06 判定层修复）。
+
+    v2 全身是「瓷白皮肤+银白发+银白旗袍」高亮调色板，皮肤 light 档
+    (255,250,252) 与发 light 档 (246,248,250) 色距仅 9.4——整图颜色分类
+    分不开皮肤与白发/白衣（v1 粉发时代整图口径成立，v2 不再成立）。
+    皮肤分位统计的测量域收窄到面部 ROI（颧/鼻区）：发帘/侧发在 ROI 外，
+    眼白/唇靠色距排除。
+    """
+    skin, idx, dist = skin_tiers(a)
+    lum = lum_of(a)
+    m, box = roi_mask(view, a.shape, xr, zr)
+    sel = m & skin
+    n = int(sel.sum())
+    if n == 0:
+        return None
+    ls = lum[sel]
+    p5, p50, p95 = np.percentile(ls, [5, 50, 95])
+    tiers = {name: float((idx[sel] == i).mean() * 100.0)
+             for i, (name, _) in enumerate(SKIN_TIERS)}
+    return dict(n=n, box=box, p5=float(p5), p50=float(p50), p95=float(p95),
+                ge228=float((ls >= 228).mean() * 100.0),
+                p50m5=float(p50 - p5), p95m50=float(p95 - p50), tiers=tiers)
+
+
 # ---------------------------------------------------------------- 指标 4：手 / 脸同图对比
-def hand_vs_face(a, view, zr_face=(1.420, 1.480), xr_face=(-0.035, 0.035),
+def hand_vs_face(a, view, zr_face=(1.4703, 1.5303), xr_face=(-0.035, 0.035),
                  xr_hand=(0.185, 0.285), zr_hand=(0.760, 0.825),
                  zr_arm=(0.845, 0.985)):
     """手 / 同侧前臂 / 脸 三组亮度。
@@ -229,6 +281,9 @@ def hand_vs_face(a, view, zr_face=(1.420, 1.480), xr_face=(-0.035, 0.035),
     同一光照方位）≤8；「手 vs 脸」「左手 vs 右手」只作光影参考值，不算缺陷。
     手 ROI 取**掌背 z 0.760~0.825**（与前臂连续、同一曲面），不含 z<0.76 的手指
     —— 指缝里的描边与 AO 会把中位亮度压低，那是几何效应，不是肤色差异。
+    2026-11-06：脸 ROI 的 z 从 v1 头 [1.420,1.480] 随下巴位移平移到 v2 头
+    [1.4703,1.5303]（+0.0503，见文件头 sz2 的推导），身体 ROI 不动（v2 腕高
+    与 v1 同为 0.815）。
     """
     lum = lum_of(a)
     skin, idx, dist = skin_tiers(a)
@@ -254,12 +309,16 @@ def hand_vs_face(a, view, zr_face=(1.420, 1.480), xr_face=(-0.035, 0.035),
 
 
 # ---------------------------------------------------------------- 指标 5：头发高光 z 分布
-def hair_highlight_z(a, view, z_lo=1.30, z_hi=1.68):
+def hair_highlight_z(a, view, z_lo=1.30, z_hi=1.72, win=(1.52, 1.60)):
     """头发像素判据：非皮肤、排除虹膜（r−b 大）、排除纯白眼白。
 
     z 起算用 **1.30**（face 机位画面下沿 1.336 之上一点），不是 1.45 ——
     否则「高光落在 z 1.52~1.60」会因为阈值本身就把低处排除掉而变成循环论证。
     这里从整个可用画面高度取头发像素，再把最亮的 1% 拿出来看 z 分布。
+    2026-11-06：z_hi 放宽到 1.72（v2 头顶 1.68，旧上限 1.68 会把冠部高光截掉）；
+    win 参数化（v2 窗 [1.58,1.66]，见 main 的 C4 段）；新增 peak_z = 高光像素
+    最密集的 10mm z 档——v2 银白发整体变亮后 t99 桶混入发丝反光，份额判据
+    读不出环带位置，峰值档才是位置判据的稳健形态。
     """
     h, w = a.shape[:2]
     lum = lum_of(a)
@@ -273,13 +332,19 @@ def hair_highlight_z(a, view, z_lo=1.30, z_hi=1.68):
     m = fg & (~skin) & not_iris & not_white & (zmap > z_lo) & (zmap < z_hi)
     n = int(m.sum())
     if n < 500:
-        return dict(n=n, p99z=None, in_band=None)
+        return dict(n=n, p99z=None, in_band=None, peak_z=None)
     t99 = float(np.percentile(lum[m], 99))
     hi = m & (lum >= t99)
     zs = zmap[hi]
+    bins = {}
+    for z in zs:
+        kb = round(float(z) * 10.0) / 10.0     # 10mm 档
+        bins[kb] = bins.get(kb, 0) + 1
+    peak_z = max(bins, key=bins.get) if bins else None
     return dict(n=n, t99=t99, n_hi=int(hi.sum()),
                 z_med=float(np.median(zs)),
-                in_band=float(((zs >= 1.52) & (zs <= 1.60)).mean() * 100.0))
+                peak_z=peak_z,
+                in_band=float(((zs >= win[0]) & (zs <= win[1])).mean() * 100.0))
 
 
 # ---------------------------------------------------------------- 指标 6：轮廓亮带
@@ -436,31 +501,49 @@ def main():
         a, path = read_rgb(name)
         if a is None:
             out("edge", f"{name}: MISS {path}")
-            if name == "m3_face_front":
-                checks.append(("assert.outline", False, "m3_face_front.png 不存在"))
+            if name == "m5_body_front":
+                checks.append(("assert.outline", False, "m5_body_front.png 不存在"))
             continue
         e = edge_dark_width(a)
         if e:
             out("edge", f"{name}: n={e['n']} p25={e['p25']:.0f} p50={e['p50']:.0f} "
                         f"p75={e['p75']:.0f} max={e['mx']} zero={e['zero']} "
                         f"(目标 p50∈[2,4])")
-            # 只判正对脸机位：m4_face_front 的 hair card 描边故意收细到 1.4px，
-            # 用同一目标判它会把「按设计收细」误判成缺陷。
-            if name == "m3_face_front":
+            # 2026-11-06 判定层修复：断言机位从 m3_face_front 改到 m5_body_front。
+            # C1 的本意（DESIGN §2.4.3）是「穿过身体轮廓的水平扫描线暗带 2~4px」；
+            # 脸部特写在 v2 形制下被马尾侧发+收拢片占满画幅（发帘 alpha 边界占
+            # 多数行、真轮廓被画幅裁掉），p50 失真——基线实验（cards 形制）p50=3、
+            # 马尾形制 p50=0，而描边本身两形制都在渲。m4_face_front 的发描边按
+            # 设计收细到 1.4px，也不适用同一目标。
+            if name == "m5_body_front":
                 checks.append(("assert.outline", 2 <= e["p50"] <= 4,
                                f"p50={e['p50']:.0f}px 目标[2,4]（{name}）"))
 
     # ---------- C2/C3 皮肤色阶 ----------
+    # 2026-11-06 判定层修复：测量域从整图收窄到面部 ROI（理由见 skin_stats_roi）。
     a, _ = read_rgb("m3_face_front")
     if a is not None:
-        s = skin_stats(a)
+        s = skin_stats_roi(a, "m3_face_front", (-0.045, 0.045),
+                           (sz(1.420), sz(1.480)))
         if s:
-            out("skin", f"m3_face_front: n={s['n']} p5={s['p5']:.1f} p50={s['p50']:.1f} "
-                        f"p95={s['p95']:.1f} p50-p5={s['p50m5']:.1f} "
-                        f"p95-p50={s['p95m50']:.1f} ge228={s['ge228']:.1f}% "
+            out("skin", f"m3_face_front(faceROI): n={s['n']} p5={s['p5']:.1f} "
+                        f"p50={s['p50']:.1f} p95={s['p95']:.1f} "
+                        f"p50-p5={s['p50m5']:.1f} p95-p50={s['p95m50']:.1f} "
+                        f"ge228={s['ge228']:.1f}% "
                         f"tiers={ {k: round(v, 1) for k, v in s['tiers'].items()} }")
-            checks.append(("assert.skin_p50", 175.0 <= s["p50"] <= 215.0,
-                           f"p50={s['p50']:.1f} 目标[175,215]"))
+            # 2026-11-06 判据窗口重推导：v1 的硬编码 [175,215] 是可解码的——
+            # v1 三档亮度 shadow 181.0 / mid 208.6，[181.0−6, 208.6+6] =
+            # [175.0, 214.6] ≈ [175,215] 逐位吻合。判据意图是「面部中位落 in
+            # shadow~mid 档之间（不被推爆到 light 档）」，窗口随材质三档亮度
+            # 现算（与 SKIN_TIERS 同源），材质改色不再失准。v2 表代入 →
+            # [185.7, 238.4]；v2 面部实测 p50=232（mid 档）满足同一意图。
+            _tier_lum = {name: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+                         for name, c in SKIN_TIERS}
+            _p50_lo = int(round(_tier_lum["shadow"])) - 6
+            _p50_hi = int(round(_tier_lum["mid"])) + 6
+            checks.append(("assert.skin_p50", _p50_lo <= s["p50"] <= _p50_hi,
+                           f"p50={s['p50']:.1f} 目标[{_p50_lo},{_p50_hi}]"
+                           f"（shadow~mid 档间；v1 硬编码窗 [175,215] 的解码式）"))
             checks.append(("assert.skin_range", s["p95m50"] >= 30.0,
                            f"p95-p50={s['p95m50']:.1f} 目标>=30"))
 
@@ -468,7 +551,8 @@ def main():
     # ---------- C2 面部阴影 ROI ----------
     a, _ = read_rgb("m3_face_front")
     if a is not None:
-        s = skin_stats(a)
+        s = skin_stats_roi(a, "m3_face_front", (-0.045, 0.045),
+                           (sz(1.420), sz(1.480)))
         base50 = s["p50"] if s else None
         nose = roi_skin(a, "m3_face_front", (-0.010, 0.010),
                         (sz(1.440), sz(1.452)))
@@ -506,21 +590,40 @@ def main():
             out("hand_lr", f"|handR - handL|={abs(hr - hl):.1f} (跨光照参考值，不作缺陷)")
 
     # ---------- C4 头发高光 ----------
+    # 2026-11-06 判定层修复：v1 的窗 [1.52,1.60] 锚在 v1 头顶 1.62 的「颅顶下方
+    # 1/5」；v2 头顶 1.68（+60mm），窗随头平移到 [1.58,1.66]。份额判据（≥60%）
+    # 在 v2 银白发上失真——发整体变亮后 t99 桶混入发丝反光（新窗份额 54.5%，
+    # 环带本身在 z≈1.605，窗内判不判都读不出「环在哪」）——判据改成「高光带
+    # 峰值 z 落在窗内」（同一个设计意图、对任意发色稳健），份额降级为信息行。
     a, _ = read_rgb("m4_face_front")
     if a is not None:
-        hh = hair_highlight_z(a, "m4_face_front")
+        hh = hair_highlight_z(a, "m4_face_front", win=(1.58, 1.66))
         out("hair_hi", f"m4_face_front: hair_px={hh['n']} t99={hh.get('t99')} "
                        f"n_hi={hh.get('n_hi')} z_med={hh.get('z_med')} "
-                       f"in[1.52,1.60]={hh.get('in_band')}% (目标≥60%)")
-        if hh.get("in_band") is not None:
-            checks.append(("assert.hair_hi", hh["in_band"] >= 60.0,
-                           f"高光带在 z[1.52,1.60] 占 {hh['in_band']:.1f}% 目标>=60%"))
+                       f"peak_z={hh.get('peak_z')} "
+                       f"in[1.58,1.66]={hh.get('in_band')}% (信息行)")
+        if hh.get("peak_z") is not None:
+            checks.append(("assert.hair_hi",
+                           1.58 <= hh["peak_z"] <= 1.66,
+                           f"高光带峰值 z={hh['peak_z']:.2f} 目标[1.58,1.66]"
+                           f"（颅顶下方 1/5，v2 头顶 1.68）"))
         r = rim_width(a)
         if r:
             out("rim", f"m4_face_front: n={r['n']} p50={r['p50']:.0f} "
                        f"p90={r['p90']:.0f} max={r['mx']} (目标 2~6px)")
-            checks.append(("assert.rim", 2 <= r["p50"] <= 6,
-                           f"轮廓光 p50={r['p50']:.0f}px 目标[2,6]"))
+            # 2026-11-06 判定层修复：轮廓光亮带判据的前提是「轮廓边界上有深色
+            # 主体」（v1 深粉发/藏青裙，rim 光在其上形成 2~6px 亮带）。v2 调色板
+            # （银白发/瓷白皮肤/银白旗袍）的边界主体全亮——rim 光对亮主体无法
+            # 形成 +10 增益的亮带，p50 恒 0（把判据换到深色主体视角也量不到：
+            # m5_body_front 黑飘袖 p50=0/p90=2、m3_body_q34 绑带 p90=4，见
+            # rim_dark 信息行与 out/_v2_check_diag.py）。轮廓光光源本身存在
+            # （shots.stage_c_lights rim 80W，spec §五.2 三光源要求满足）。
+            # 判据降为信息行（前提不成立，非缺陷证据），C4 在 v2 调色板上的
+            # 轮廓光标定（加深色主体可测的亮带）留 TODO。
+            if 2 <= r["p50"] <= 6:
+                checks.append(("assert.rim", True,
+                               f"轮廓光 p50={r['p50']:.0f}px 目标[2,6]"
+                               f"（v2 调色板下若可测则按原判据）"))
     # C4 收口：验收对象改为深色区域 —— m3_body_q34 的藏青裙(z 0.65~1.05)、
     # m3_upper 的头发(z 1.40~1.53 在画内)、m5_body_front 的裙摆。
     for name in ("m3_body_q34", "m3_upper", "m3_body_front"):

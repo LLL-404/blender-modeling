@@ -162,8 +162,10 @@ def _cuff_ring(side, tip_z=1.110):
     任意一环内表面（r−1mm）都不低于袖筒外表面 48.34mm，不会嵌进袖筒。
     """
     s = side
-    tip = Vector((0.169 * s, 0.006, tip_z))
-    axis = Vector((-0.075 * s, 0.050, -0.996)).normalized()
+    # v2：卷边中心跟袖口（0.169→0.180），轴向跟 v2 臂末段的斜率
+    # （Δx/Δz = (0.180−0.171)/(1.110−1.150) ≈ −0.23，v1 是 −0.075）。
+    tip = Vector((0.180 * s, 0.006, tip_z))
+    axis = Vector((-0.230 * s, 0.048, -0.971)).normalized()
     pts = [tip - axis * 0.010, tip - axis * 0.004, tip]
     rs = [(0.0504, 0.0504), (0.0506, 0.0506), (0.0495, 0.0495)]
     ob = tube(pts, rs, seg=40, name=f"cuff_{s}",
@@ -194,10 +196,13 @@ def _sleeve(side, solid=True, cuff=True):
     s = side
     # 外观旋钮：sleeve_length = 袖口末端 z（默认 1.110 = 引入旋钮前的字面量）。
     z_tip = charparams.get("outfit.sleeve_length", _DEFAULT_SLEEVE_TIP_Z)
-    pts = [Vector((0.105 * s, 0.000, 1.270)),
-           Vector((0.140 * s, 0.002, 1.215)),
-           Vector((0.172 * s, 0.004, 1.150)),
-           Vector((0.169 * s, 0.006, z_tip))]
+    # v2（2026-11-05）：袖筒路径必须落在手臂轴线上（见下方 docstring 的
+    # 「末端必须落在手臂轴线上」），body.arm 上段外移（x 0.095/0.135/0.172 →
+    # 0.112/0.151/0.179）后袖筒跟着移；半径不动（对臂净空 10~16mm 不变）。
+    pts = [Vector((0.114 * s, 0.000, 1.270)),
+           Vector((0.158 * s, 0.002, 1.215)),
+           Vector((0.171 * s, 0.004, 1.150)),
+           Vector((0.180 * s, 0.006, z_tip))]
     rs = [(0.062, 0.062), (0.058, 0.058), (0.055, 0.055), (0.047, 0.047)]
     p, r = resample_path(pts, rs, 0.012)
     ob = tube(p, r, seg=40, name=f"sleeve_{s}", cap_start=True, cap_end=True)
@@ -547,8 +552,14 @@ def _skirt(solid=True):
     if zb != _DEFAULT_SKIRT_Z_BOTTOM:
         kz = (1.045 - zb) / (1.045 - _DEFAULT_SKIRT_Z_BOTTOM)
         zs = [1.045 - (1.045 - z) * kz for z in zs]
-    rxs = [0.112, 0.118, 0.130, 0.148, 0.170, 0.190, 0.210, 0.226]
-    rys = [0.088, 0.094, 0.104, 0.118, 0.134, 0.150, 0.166, 0.180]
+    # v2（2026-11-05）：0.850 环是固定环（0.920 以下不参与腰围反解），胯环
+    # 加宽（TORSO 0.858 行 0.153→0.183，腿管上段外缘 0.150→0.168）后原
+    # 0.170/0.134 会被髋部顶穿（波谷 0.165 < 体表 0.176）。按 v2 体表
+    # （0.850 处 ≈0.176/0.144）+ 波谷 0.75·amp(≈0.0049) + 余量 2mm 重给：
+    #   rx = 0.176 + 0.005 + 0.002 ≈ 0.182；ry(背) = 0.144 + 0.005 + 0.005 ≈ 0.154
+    # 0.780 及以下体表（大腿外缘 0.166→0.145）低于环值波谷，不动。
+    rxs = [0.112, 0.118, 0.130, 0.148, 0.182, 0.190, 0.210, 0.226]
+    rys = [0.088, 0.094, 0.104, 0.118, 0.154, 0.150, 0.166, 0.180]
     pleats = SKIRT_PLEATS
     # 外观旋钮：skirt_amplitude_scale 乘褶幅（默认 1.0，×1.0 精确）
     ak = charparams.get("outfit.skirt_amplitude_scale", _DEFAULT_SKIRT_AMP_SCALE)

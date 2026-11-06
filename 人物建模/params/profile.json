@@ -1,7 +1,11 @@
 {
+  "_meta": {
+    "v2": "2026-11-05 改靶「银发旗袍少女」（spec/角色设定-银发旗袍-v1.md）：height 1.68 含鞋跟口径、6.5 头身、银白冷灰发色。v1（修长少女 7.5 头身粉发）冻结于 profile-v1-修长7.5.json。",
+    "gaps": "2026-11-06 整合：形制落差（低马尾/旗袍/飘袖/配饰/挑染）已接进管线——hair.style=ponytail、outfit.style=qipao（OUTFIT_STYLE=shirt 环境变量仍可回退旧制服）；qipao 段是 lib/qipao.py 的三个形制旋钮（缺省即此值）。仍未做：祥云暗纹（C 阶段法线贴图）、leg_length_ratio（与 cfg.CROTCH_Z 解耦，翻它是假动作，腿目标在 spec/reference.json 等 rebuild）。"
+  },
   "appearance": {
-    "height": 1.62,
-    "head_to_body_ratio": 7.5,
+    "height": 1.68,
+    "head_to_body_ratio": 6.5,
     "head_width_scale": 1.0,
     "face_width_scale": 1.0,
     "eye_spacing_scale": 1.0,
@@ -18,10 +22,12 @@
     "foot_size_scale": 1.0
   },
   "hair": {
-    "style": "cards",
-    "hair_color": [1.0, 0.565, 0.648],
-    "hair_shadow_color": [0.216, 0.06, 0.107],
-    "hair_ring_color": [0.18, 0.1, 0.14],
+    "style": "ponytail",
+    "hair_color": [0.93, 0.94, 0.96],
+    "hair_shadow_color": [0.62, 0.67, 0.78],
+    "hair_ring_color": [0.15, 0.16, 0.21],
+    "hair_highlight_color": [0.16, 0.38, 0.88],
+    "hair_highlight_shadow": [0.06, 0.16, 0.45],
     "bangs_groups": 3,
     "clump_count": 7,
     "clump_width_scale": 1.0,
@@ -31,6 +37,7 @@
     "twin_tails": false
   },
   "outfit": {
+    "style": "qipao",
     "shirt_color": [0.93, 0.93, 0.95],
     "skirt_color": [0.072, 0.105, 0.26],
     "skirt_length": 0.65,
@@ -38,6 +45,11 @@
     "skirt_amplitude_scale": 1.0,
     "sleeve_length": 1.11,
     "collar_v_depth": 0.022
+  },
+  "qipao": {
+    "hem_z": 0.115,
+    "slit_top_z": 0.955,
+    "slit_off_deg": 7.0
   },
   "render": {
     "outline_px": 3.5,
