@@ -1,5 +1,17 @@
 # 变更记录
 
+## 2026-11-06 / v0.21.1 — 校准守护收尾：路径围栏 + 指纹换 SHA-256
+
+上一轮 v2 重建工作流在 09:00 被 GLM 配额中断（`exceed quota limit`），断点就在本文件：
+`main()` 里已经调用 `_contained(SPEC)`，但**函数定义没落上**——名字在运行时必炸。
+本轮补齐并顺手做掉当时说好的两件事。
+
+- `scripts/calibrate_guard.py`：补 `_contained(path)` —— 把「只允许碰项目根内路径」写成显式断言，越界 `SystemExit`；返回值改成 `Path`，读写改用 `read_bytes` / `write_bytes` / `read_text`（全文件不再出现 `open()`）
+- 指纹 `MD5 → SHA-256`：记录字段 `reference_md5` → `reference_sha256` + `hash_alg: "sha256"`
+- `scripts/flow.py`：`_calibration_gate` 同步换 SHA-256 口径（`Path(ref).read_bytes()`），否则新旧指纹对不上会误判「参考图内容变了」
+- 验收：`py_compile` 过；`calibrate_guard.py --verify` **PASS**（原图 FAIL=0、退化图 FAIL=2）；`flow check face` 的「基线自检=**PASS**」；记录已重写为 `sha256 c15f72f3…`
+- **未改模型**
+
 ## 2026-11-06 / v0.21.0 — v2 角色重建：银发旗袍少女 · 6.5 头身
 
 由重建工作流（`dwf_run` 01d6cb05，08:20 → 02:41，1.03 亿 token）交付，本轮只做入库收尾。

@@ -51,6 +51,7 @@ import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -431,8 +432,9 @@ def _calibration_gate():
     ref = os.path.join(ROOT, cfg.get("reference_image", ""))
     if not os.path.isfile(ref):
         return bad("参考图不存在：%s" % cfg.get("reference_image"))
-    md5 = hashlib.md5(open(ref, "rb").read()).hexdigest()
-    if g.get("reference_md5") != md5:
+    # v0.20.7：指纹从 MD5 换 SHA-256（与 calibrate_guard.py 同口径）。
+    digest = hashlib.sha256(Path(ref).read_bytes()).hexdigest()
+    if g.get("reference_sha256") != digest:
         return bad("参考图内容变了但没重跑 --calibrate")
     return {"kind": "calibration", "id": "calibration", "label": "基线自检",
             "verdict": "PASS", "detail": "参考图与基线均已自检（%s）" % g.get("at")}
