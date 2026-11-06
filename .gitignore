@@ -25,3 +25,4 @@ catalog_bak/
 # 索引由 docs/manual_index.py 从 zip 重建，两者都不入库
 docs/blender_manual_html.zip
 docs/manual/
+plugins/
